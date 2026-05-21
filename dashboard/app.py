@@ -1,4 +1,5 @@
 import sys
+import os
 import time
 from datetime import datetime, timezone, timedelta
 
@@ -6,7 +7,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 
-sys.path.append("..")
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import config
 
 st.set_page_config(page_title="Havas Analytics", layout="wide")

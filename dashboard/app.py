@@ -27,14 +27,13 @@ client = get_client()
 
 
 def fetch_heartbeat():
-    row = (
-        client.table("heartbeat")
-        .select("last_seen")
-        .eq("store", config.STORE_NAME)
-        .maybe_single()
-        .execute()
-    )
-    return row.data
+    try:
+        result = client.table("heartbeat").select("*").eq("store", config.STORE_NAME).execute()
+        if result.data and len(result.data) > 0:
+            return result.data[0]
+        return None
+    except:
+        return None
 
 
 def fetch_visits(days=None):
@@ -57,15 +56,15 @@ def fetch_visits(days=None):
 
 # --- Status bar ---
 heartbeat = fetch_heartbeat()
-if heartbeat:
+if heartbeat is None:
+    st.warning("⚪ Нет данных от системы")
+else:
     last_seen = pd.to_datetime(heartbeat["last_seen"], utc=True)
     age = datetime.now(timezone.utc) - last_seen
     if age < timedelta(minutes=10):
         st.success("🟢 Система работает")
     else:
         st.error(f"🔴 Система не отвечает — последний сигнал: {last_seen.strftime('%d.%m.%Y %H:%M')}")
-else:
-    st.error("🔴 Нет данных о статусе системы")
 
 st.divider()
 

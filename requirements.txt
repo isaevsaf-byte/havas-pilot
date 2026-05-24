@@ -1,7 +1,7 @@
 ultralytics
 supervision
 opencv-python
-torchreid
+torchvision
 torch
 supabase
 streamlit

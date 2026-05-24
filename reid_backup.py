@@ -2,9 +2,7 @@ import uuid
 import numpy as np
 import cv2
 import torch
-import torch.nn as nn
-import torchvision.models as models
-import torchvision.transforms as T
+import torchreid
 
 import config
 from detector import PersonDetector
@@ -12,27 +10,16 @@ from detector import PersonDetector
 
 class ReIDChecker:
     # Re-identifies a person crop against known visitors stored in LocalDB.
-    # Uses ResNet50 (ImageNet pretrained) as backbone — same architecture
-    # FastReID uses for MSMT17/bagtricks_R50, without domain-specific fine-tuning.
-    # Input: 256x128 (FastReID standard). Normalization: ImageNet mean/std.
+    # Uses OSNet-x0.25 embeddings + cosine similarity to decide new vs. repeat.
 
     def __init__(self, local_db):
         self.local_db = local_db
         self.threshold = config.REID_THRESHOLD
-        self.device = torch.device("cpu")
+        self.extractor = torchreid.utils.FeatureExtractor(
+            model_name="osnet_x0_25",
+            device="cpu",
+        )
         self._detector = PersonDetector()
-
-        # Load ResNet50, strip classifier → pure feature extractor
-        backbone = models.resnet50(weights=models.ResNet50_Weights.IMAGENET1K_V1)
-        self.model = nn.Sequential(*list(backbone.children())[:-1])  # output: (B, 2048, 1, 1)
-        self.model.eval()
-        self.model.to(self.device)
-
-        self.transform = T.Compose([
-            T.ToTensor(),
-            T.Normalize(mean=[0.485, 0.456, 0.406],
-                        std=[0.229, 0.224, 0.225]),
-        ])
 
     def normalize_crop(self, crop):
         lab = cv2.cvtColor(crop, cv2.COLOR_BGR2LAB)
@@ -48,13 +35,12 @@ class ReIDChecker:
             return None
 
         crop = self.normalize_crop(crop)
-        crop = cv2.resize(crop, (128, 256))                      # W=128, H=256
-        crop_rgb = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
+        crop = cv2.resize(crop, (128, 256))
 
-        tensor = self.transform(crop_rgb).unsqueeze(0).to(self.device)  # (1, 3, 256, 128)
-        with torch.no_grad():
-            feat = self.model(tensor)                            # (1, 2048, 1, 1)
-        return feat.squeeze().cpu().numpy()                      # (2048,)
+        # torchreid expects a list of numpy arrays in RGB, uint8
+        crop_rgb = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
+        features = self.extractor([crop_rgb])  # returns tensor (1, D)
+        return features[0].cpu().numpy()
 
     def check(self, crop, track_id):
         embedding = self.get_embedding(crop)

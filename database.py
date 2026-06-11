@@ -1,7 +1,7 @@
 import sqlite3
 import pickle
 import numpy as np
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 import config
 
@@ -23,6 +23,14 @@ class LocalDB:
             )
         """)
         self.conn.commit()
+        self.cleanup_old()
+
+    def cleanup_old(self):
+        # Embeddings older than GALLERY_TTL_DAYS can no longer match anyway
+        # (visitor appearance changes) and slow down find_similar.
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=config.GALLERY_TTL_DAYS)).isoformat()
+        self.conn.execute("DELETE FROM embeddings WHERE last_seen < ?", (cutoff,))
+        self.conn.commit()
 
     def save_embedding(self, visitor_id, embedding):
         now = datetime.now(timezone.utc).isoformat()
@@ -37,8 +45,10 @@ class LocalDB:
         self.conn.commit()
 
     def find_similar(self, embedding, threshold):
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=config.GALLERY_TTL_DAYS)).isoformat()
         rows = self.conn.execute(
-            "SELECT visitor_id, embedding FROM embeddings"
+            "SELECT visitor_id, embedding FROM embeddings WHERE last_seen >= ?",
+            (cutoff,),
         ).fetchall()
 
         best_id, best_sim = None, 0.0

@@ -1,7 +1,7 @@
 import queue
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 
 import cv2
 
@@ -24,7 +24,7 @@ def connect_camera():
             return cap
         print("Камера недоступна, жду 10 секунд...")
         cap.release()
-        time.sleep(10)
+        time.sleep(config.CAMERA_RECONNECT_DELAY_SEC)
 
 
 def should_count(track_id):
@@ -58,7 +58,7 @@ def cloud_sender(cloud_db):
         except Exception as e:
             print(f"[cloud_sender] ошибка отправки, вернул в очередь: {e}")
             event_queue.put((kind, payload))
-            time.sleep(5)
+            time.sleep(config.QUEUE_RETRY_DELAY_SEC)
 
 
 def main():
@@ -102,13 +102,13 @@ def main():
             color = (200, 200, 200)
             label = ""
 
-            if abs(cy - line_y) < 20 and should_count(track_id):
+            if abs(cy - line_y) < config.LINE_TOLERANCE_PX and should_count(track_id):
                 crop = frame[y1:y2, x1:x2]
                 result = reid.check(crop, track_id)
                 if result is not None:
                     direction = get_direction(track_id, cy)
                     event_queue.put(("visit", {
-                        "timestamp": datetime.now().isoformat(),
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
                         "direction": direction,
                         "is_repeat": result["status"] == "repeat",
                         "visitor_id": result["visitor_id"],

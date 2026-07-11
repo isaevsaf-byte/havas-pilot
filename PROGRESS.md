@@ -19,7 +19,7 @@
 
 | Задача | Статус | Сессия | Заметки |
 |--------|--------|--------|---------|
-| T-01: Критические баги (timezone, except, дубликат) | ⬜ | — | |
+| T-01: Критические баги (timezone, except, дубликат) | ✅ | 2026-07-11 | timezone.utc в main.py+test_with_video.py; except Exception в app.py; удалён reid_backup.py |
 | T-02: Централизация конфига | ⬜ | — | |
 | T-03: print() → logging | ⬜ | — | |
 | T-04: Thread safety | ⬜ | — | |
@@ -39,6 +39,12 @@
 - Найдено ~50 проблем, сформирован PLAN.md с 10 задачами
 - Код не менялся — только аудит
 
+### Сессия 2026-07-11 — T-01
+- `main.py`: добавлен `timezone`, `datetime.now()` → `datetime.now(timezone.utc)` для DB timestamp
+- `test_with_video.py`: то же самое для `cloud_db.log_visit()`
+- `dashboard/app.py:35`: `except:` → `except Exception as e:` + `st.error()`
+- Удалён `reid_backup.py` (полный дубликат `reid.py`)
+
 ---
 
 ## Метрики (baseline)
@@ -50,5 +56,5 @@
 | Функций без type hints | 33/33 |
 | Магических чисел | 20+ |
 | `print()` вызовов | ~20 |
-| Критических багов | 2 (timezone) |
-| Дублирующихся файлов | 1 (reid_backup.py) |
+| Критических багов | 0 (было 2, исправлены) |
+| Дублирующихся файлов | 0 (было 1, удалён) |

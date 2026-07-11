@@ -1,7 +1,7 @@
 import os
 import subprocess
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from collections import defaultdict
 
 import cv2
@@ -90,7 +90,7 @@ def main():
 
                 is_repeat = result["status"] == "repeat"
                 cloud_db.log_visit(
-                    timestamp=datetime.now().isoformat(),
+                    timestamp=datetime.now(timezone.utc).isoformat(),
                     direction=direction,
                     is_repeat=is_repeat,
                     visitor_id=result["visitor_id"],

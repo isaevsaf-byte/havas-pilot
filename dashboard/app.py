@@ -32,7 +32,8 @@ def fetch_heartbeat():
         if result.data and len(result.data) > 0:
             return result.data[0]
         return None
-    except:
+    except Exception as e:
+        st.error(f"Ошибка получения heartbeat: {e}")
         return None
 
 

@@ -1,4 +1,5 @@
 from ultralytics import YOLO
+from typing import List, Dict, Any
 
 import config
 
@@ -10,7 +11,7 @@ class PersonDetector:
     def __init__(self):
         self.model = YOLO("yolov8n.pt")
 
-    def detect(self, frame):
+    def detect(self, frame: Any) -> List[Dict[str, Any]]:
         results = self.model(frame, verbose=False)[0]
         detections = []
         for box in results.boxes:
@@ -23,6 +24,6 @@ class PersonDetector:
             })
         return detections
 
-    def is_good_crop(self, bbox):
+    def is_good_crop(self, bbox: List[int]) -> bool:
         x1, y1, x2, y2 = bbox
         return (x2 - x1) > config.MIN_CROP_W and (y2 - y1) > config.MIN_CROP_H

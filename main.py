@@ -2,6 +2,7 @@ import logging
 import queue
 import threading
 import time
+from typing import Tuple
 
 import cv2
 
@@ -21,7 +22,7 @@ logger = logging.getLogger(__name__)
 event_queue = queue.Queue()
 
 
-def connect_camera():
+def connect_camera() -> cv2.VideoCapture:
     while True:
         cap = cv2.VideoCapture(config.CAMERA_URL)
         if cap.isOpened():
@@ -31,7 +32,7 @@ def connect_camera():
         time.sleep(config.CAMERA_RECONNECT_DELAY_SEC)
 
 
-def cloud_sender(cloud_db):
+def cloud_sender(cloud_db: CloudDB) -> None:
     # Network I/O lives here so a slow Supabase call never stalls
     # the video loop. Events wait in the queue until they are delivered.
     while True:
@@ -47,7 +48,7 @@ def cloud_sender(cloud_db):
             time.sleep(config.QUEUE_RETRY_DELAY_SEC)
 
 
-def main():
+def main() -> None:
     detector = PersonDetector()
     tracker = PersonTracker()
     local_db = LocalDB()

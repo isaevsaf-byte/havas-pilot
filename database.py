@@ -3,6 +3,7 @@ import sqlite3
 import pickle
 import numpy as np
 from datetime import datetime, timezone, timedelta
+from typing import Optional, Tuple
 
 import config
 
@@ -28,14 +29,14 @@ class LocalDB:
         self.conn.commit()
         self.cleanup_old()
 
-    def cleanup_old(self):
+    def cleanup_old(self) -> None:
         # Embeddings older than GALLERY_TTL_DAYS can no longer match anyway
         # (visitor appearance changes) and slow down find_similar.
         cutoff = (datetime.now(timezone.utc) - timedelta(days=config.GALLERY_TTL_DAYS)).isoformat()
         self.conn.execute("DELETE FROM embeddings WHERE last_seen < ?", (cutoff,))
         self.conn.commit()
 
-    def save_embedding(self, visitor_id, embedding):
+    def save_embedding(self, visitor_id: str, embedding: np.ndarray) -> None:
         now = datetime.now(timezone.utc).isoformat()
         blob = pickle.dumps(embedding)
         self.conn.execute(
@@ -47,7 +48,7 @@ class LocalDB:
         )
         self.conn.commit()
 
-    def find_similar(self, embedding, threshold):
+    def find_similar(self, embedding: np.ndarray, threshold: float) -> Tuple[Optional[str], float]:
         cutoff = (datetime.now(timezone.utc) - timedelta(days=config.GALLERY_TTL_DAYS)).isoformat()
         rows = self.conn.execute(
             "SELECT visitor_id, embedding FROM embeddings WHERE last_seen >= ?",
@@ -78,7 +79,7 @@ class LocalDB:
         return None, 0.0
 
 
-def _cosine_similarity(a, b):
+def _cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
     a, b = np.array(a, dtype=float), np.array(b, dtype=float)
     denom = np.linalg.norm(a) * np.linalg.norm(b)
     if denom == 0:
@@ -99,7 +100,7 @@ class CloudDB:
             from supabase import create_client
             self.client = create_client(config.SUPABASE_URL, config.SUPABASE_KEY)
 
-    def log_visit(self, timestamp, direction, is_repeat, visitor_id):
+    def log_visit(self, timestamp: str, direction: str, is_repeat: bool, visitor_id: str) -> None:
         payload = {
             "timestamp": timestamp,
             "direction": direction,
@@ -112,7 +113,7 @@ class CloudDB:
             return
         self.client.table("visits").insert(payload).execute()
 
-    def log_heartbeat(self):
+    def log_heartbeat(self) -> None:
         now = datetime.now(timezone.utc).isoformat()
         payload = {"store": config.STORE_NAME, "last_seen": now}
         if self.offline:

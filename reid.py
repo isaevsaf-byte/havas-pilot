@@ -3,6 +3,7 @@ import numpy as np
 import cv2
 import torch
 import torchreid
+from typing import Optional, Dict, Any
 
 import config
 from detector import PersonDetector
@@ -21,7 +22,7 @@ class ReIDChecker:
         )
         self._detector = PersonDetector()
 
-    def normalize_crop(self, crop):
+    def normalize_crop(self, crop: np.ndarray) -> np.ndarray:
         lab = cv2.cvtColor(crop, cv2.COLOR_BGR2LAB)
         l, a, b = cv2.split(lab)
         clahe = cv2.createCLAHE(clipLimit=config.CLAHE_CLIP_LIMIT, tileGridSize=config.CLAHE_TILE)
@@ -29,7 +30,7 @@ class ReIDChecker:
         lab = cv2.merge([l, a, b])
         return cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
 
-    def get_embedding(self, crop):
+    def get_embedding(self, crop: np.ndarray) -> Optional[np.ndarray]:
         h, w = crop.shape[:2]
         if not self._detector.is_good_crop([0, 0, w, h]):
             return None
@@ -42,7 +43,7 @@ class ReIDChecker:
         features = self.extractor([crop_rgb])  # returns tensor (1, D)
         return features[0].cpu().numpy()
 
-    def check(self, crop, track_id):
+    def check(self, crop: np.ndarray, track_id: int) -> Optional[Dict[str, Any]]:
         embedding = self.get_embedding(crop)
         if embedding is None:
             return None

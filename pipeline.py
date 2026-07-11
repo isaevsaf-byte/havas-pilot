@@ -5,16 +5,19 @@ track visitors, isolated from I/O and initialization logic.
 """
 
 import logging
+import queue
 from datetime import datetime, timezone
+from typing import List, Dict, Any
 
 import cv2
+import numpy as np
 
 import config
 
 logger = logging.getLogger(__name__)
 
 
-def process_frame(frame, detector, tracker):
+def process_frame(frame: np.ndarray, detector: Any, tracker: Any) -> List[Dict[str, Any]]:
     """Detect and track persons in frame.
 
     Args:
@@ -30,7 +33,14 @@ def process_frame(frame, detector, tracker):
     return tracks
 
 
-def check_visitors(tracks, frame, reid, state, line_y, event_queue):
+def check_visitors(
+    tracks: List[Dict[str, Any]],
+    frame: np.ndarray,
+    reid: Any,
+    state: Any,
+    line_y: float,
+    event_queue: queue.Queue
+) -> List[Dict[str, Any]]:
     """Check if tracked persons are new/repeat visitors.
 
     Args:
@@ -84,7 +94,7 @@ def check_visitors(tracks, frame, reid, state, line_y, event_queue):
     return results
 
 
-def render_overlay(frame, tracks_with_results, line_y):
+def render_overlay(frame: np.ndarray, tracks_with_results: List[Dict[str, Any]], line_y: float) -> None:
     """Draw bounding boxes, labels, and counting line on frame.
 
     Args:
@@ -107,7 +117,7 @@ def render_overlay(frame, tracks_with_results, line_y):
     cv2.line(frame, (0, line_y), (width, line_y), (0, 255, 255), 2)
 
 
-def handle_heartbeat(frame_count, event_queue):
+def handle_heartbeat(frame_count: int, event_queue: queue.Queue) -> int:
     """Check if it's time to send heartbeat and reset counter.
 
     Args:

@@ -1,5 +1,7 @@
 from ultralytics import YOLO
 
+import config
+
 
 class PersonDetector:
     # Uses YOLOv8n to detect people in a video frame.
@@ -23,4 +25,4 @@ class PersonDetector:
 
     def is_good_crop(self, bbox):
         x1, y1, x2, y2 = bbox
-        return (x2 - x1) > 50 and (y2 - y1) > 100
+        return (x2 - x1) > config.MIN_CROP_W and (y2 - y1) > config.MIN_CROP_H

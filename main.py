@@ -1,3 +1,4 @@
+import logging
 import queue
 import threading
 import time
@@ -6,10 +7,14 @@ from datetime import datetime, timezone
 import cv2
 
 import config
+from logger import setup_logging
 from detector import PersonDetector
 from tracker import PersonTracker
 from reid import ReIDChecker
 from database import LocalDB, CloudDB
+
+setup_logging()
+logger = logging.getLogger(__name__)
 
 # --- State ---
 first_positions = {}   # track_id -> cy at first sighting (direction reference)
@@ -22,7 +27,7 @@ def connect_camera():
         cap = cv2.VideoCapture(config.CAMERA_URL)
         if cap.isOpened():
             return cap
-        print("Камера недоступна, жду 10 секунд...")
+        logger.warning("Камера недоступна, жду %d секунд...", config.CAMERA_RECONNECT_DELAY_SEC)
         cap.release()
         time.sleep(config.CAMERA_RECONNECT_DELAY_SEC)
 
@@ -56,7 +61,7 @@ def cloud_sender(cloud_db):
             elif kind == "heartbeat":
                 cloud_db.log_heartbeat()
         except Exception as e:
-            print(f"[cloud_sender] ошибка отправки, вернул в очередь: {e}")
+            logger.error("cloud_sender: ошибка отправки, вернул в очередь: %s", e)
             event_queue.put((kind, payload))
             time.sleep(config.QUEUE_RETRY_DELAY_SEC)
 
@@ -77,8 +82,8 @@ def main():
     while True:
         ret, frame = cap.read()
         if not ret:
-            print("Кадр не получен, переподключаюсь...")
-            time.sleep(5)
+            logger.warning("Кадр не получен, переподключаюсь...")
+            time.sleep(config.CAMERA_RECONNECT_DELAY_SEC)
             cap.release()
             cap = connect_camera()
             continue
@@ -113,9 +118,8 @@ def main():
                         "is_repeat": result["status"] == "repeat",
                         "visitor_id": result["visitor_id"],
                     }))
-                    ts = datetime.now().strftime("%H:%M:%S")
                     short_id = result["visitor_id"][:8]
-                    print(f"[{ts}] {direction} | {result['status']} | visitor_{short_id}")
+                    logger.info("%s | %s | visitor_%s", direction, result["status"], short_id)
 
                     color = (0, 255, 0) if result["status"] == "new" else (255, 0, 0)
                     label = f"{direction} | {result['status']}"
@@ -127,7 +131,7 @@ def main():
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 1)
 
         frame_count += 1
-        if frame_count >= 750:
+        if frame_count >= config.HEARTBEAT_EVERY_N_FRAMES:
             event_queue.put(("heartbeat", {}))
             frame_count = 0
 

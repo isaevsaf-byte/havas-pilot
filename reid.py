@@ -24,7 +24,7 @@ class ReIDChecker:
     def normalize_crop(self, crop):
         lab = cv2.cvtColor(crop, cv2.COLOR_BGR2LAB)
         l, a, b = cv2.split(lab)
-        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+        clahe = cv2.createCLAHE(clipLimit=config.CLAHE_CLIP_LIMIT, tileGridSize=config.CLAHE_TILE)
         l = clahe.apply(l)
         lab = cv2.merge([l, a, b])
         return cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
@@ -35,7 +35,7 @@ class ReIDChecker:
             return None
 
         crop = self.normalize_crop(crop)
-        crop = cv2.resize(crop, (128, 256))
+        crop = cv2.resize(crop, (config.EMBED_CROP_W, config.EMBED_CROP_H))
 
         # torchreid expects a list of numpy arrays in RGB, uint8
         crop_rgb = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)

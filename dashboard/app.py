@@ -158,6 +158,6 @@ if not df_all.empty:
 else:
     st.info("Событий пока нет")
 
-# --- Auto-refresh every 30 seconds ---
-time.sleep(30)
+# --- Auto-refresh ---
+time.sleep(config.DASHBOARD_REFRESH_SEC)
 st.rerun()

@@ -1,3 +1,4 @@
+import logging
 import os
 import subprocess
 import time
@@ -7,10 +8,14 @@ from collections import defaultdict
 import cv2
 
 import config
+from logger import setup_logging
 from detector import PersonDetector
 from tracker import PersonTracker
 from reid import ReIDChecker
 from database import LocalDB, CloudDB
+
+setup_logging()
+logger = logging.getLogger(__name__)
 
 VIDEO_URL = "https://raw.githubusercontent.com/intel-iot-devkit/sample-videos/master/person-bicycle-car-detection.mp4"
 VIDEO_PATH = "test_video.mp4"
@@ -18,11 +23,11 @@ VIDEO_PATH = "test_video.mp4"
 
 def download_video():
     if os.path.exists(VIDEO_PATH):
-        print(f"Видео уже есть: {VIDEO_PATH}")
+        logger.info("Видео уже есть: %s", VIDEO_PATH)
         return
-    print(f"Скачиваю {VIDEO_URL} ...")
+    logger.info("Скачиваю %s ...", VIDEO_URL)
     subprocess.run(["curl", "-L", VIDEO_URL, "-o", VIDEO_PATH], check=True)
-    print(f"Сохранено: {VIDEO_PATH}")
+    logger.info("Сохранено: %s", VIDEO_PATH)
 
 
 def main():
@@ -48,11 +53,11 @@ def main():
 
     cap = cv2.VideoCapture(VIDEO_PATH)
     if not cap.isOpened():
-        print("Не удалось открыть видео.")
+        logger.error("Не удалось открыть видео: %s", VIDEO_PATH)
         return
 
     frame_count = 0
-    print("Обрабатываю видео...\n")
+    logger.info("Обрабатываю видео...")
 
     while True:
         ret, frame = cap.read()
@@ -76,7 +81,7 @@ def main():
             prev_positions[track_id] = cy
             direction = "IN" if (prev_cy is None or cy > prev_cy) else "OUT"
 
-            if abs(cy - line_y) < 40:
+            if abs(cy - line_y) < config.LINE_TOLERANCE_PX:
                 now = time.time()
                 last = last_counted.get(track_id)
                 if last is not None and (now - last) < config.COOLDOWN_SECONDS:
@@ -96,9 +101,8 @@ def main():
                     visitor_id=result["visitor_id"],
                 )
 
-                ts = datetime.now().strftime("%H:%M:%S")
                 short_id = result["visitor_id"][:8]
-                print(f"[{ts}] {direction} | {result['status']} | visitor_{short_id}")
+                logger.info("%s | %s | visitor_%s", direction, result["status"], short_id)
 
                 stats["total"] += 1
                 stats[result["status"]] += 1
@@ -108,12 +112,10 @@ def main():
 
     cap.release()
 
-    print("\n--- Итоговая статистика ---")
-    print(f"Всего событий:  {stats['total']}")
-    print(f"Новых визитов:  {stats['new']}")
-    print(f"Повторных:      {stats['repeat']}")
-    print(f"IN:             {stats['IN']}")
-    print(f"OUT:            {stats['OUT']}")
+    logger.info(
+        "Итоговая статистика: всего=%d, новых=%d, повторных=%d, IN=%d, OUT=%d",
+        stats["total"], stats["new"], stats["repeat"], stats["IN"], stats["OUT"],
+    )
 
 
 if __name__ == "__main__":

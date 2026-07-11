@@ -20,7 +20,7 @@
 | Задача | Статус | Сессия | Заметки |
 |--------|--------|--------|---------|
 | T-01: Критические баги (timezone, except, дубликат) | ✅ | 2026-07-11 | timezone.utc в main.py+test_with_video.py; except Exception в app.py; удалён reid_backup.py |
-| T-02: Централизация конфига | ⬜ | — | |
+| T-02: Централизация конфига | ✅ | 2026-07-11 | 9 констант добавлены в config.py (4 секции); заменены хардкоды в main.py, detector.py, reid.py, dashboard/app.py |
 | T-03: print() → logging | ⬜ | — | |
 | T-04: Thread safety | ⬜ | — | |
 | T-05: Рефакторинг main() | ⬜ | — | |
@@ -39,6 +39,15 @@
 - Найдено ~50 проблем, сформирован PLAN.md с 10 задачами
 - Код не менялся — только аудит
 
+### Сессия 2026-07-11 — T-02
+- `config.py`: расширен с 9 до 18 переменных, добавлены секции CAMERA / DETECTION / REID / DB / UI
+- Новые константы: `CAMERA_RECONNECT_DELAY_SEC`, `QUEUE_RETRY_DELAY_SEC`, `LINE_TOLERANCE_PX`, `HEARTBEAT_EVERY_N_FRAMES`, `MIN_CROP_W`, `MIN_CROP_H`, `CLAHE_CLIP_LIMIT`, `CLAHE_TILE`, `EMBED_CROP_W`, `EMBED_CROP_H`, `DASHBOARD_REFRESH_SEC`
+- `main.py`: заменены 5 хардкодов (10, 5, 5, 20, 750) — включая `time.sleep` в frame-reconnect
+- `detector.py`: заменены 2 хардкода (50, 100); добавлен `import config`
+- `reid.py`: заменены 3 хардкода (2.0, (8,8), 128/256)
+- `dashboard/app.py`: заменён 1 хардкод (30)
+- `test_with_video.py`: заменён хардкод 40 → `config.LINE_TOLERANCE_PX`
+
 ### Сессия 2026-07-11 — T-01
 - `main.py`: добавлен `timezone`, `datetime.now()` → `datetime.now(timezone.utc)` для DB timestamp
 - `test_with_video.py`: то же самое для `cloud_db.log_visit()`
@@ -54,7 +63,7 @@
 | Файлов Python | 12 |
 | Строк кода | ~862 |
 | Функций без type hints | 33/33 |
-| Магических чисел | 20+ |
+| Магических чисел | 0 (было 20+, устранены в T-02) |
 | `print()` вызовов | ~20 |
 | Критических багов | 0 (было 2, исправлены) |
 | Дублирующихся файлов | 0 (было 1, удалён) |

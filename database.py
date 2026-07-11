@@ -1,9 +1,12 @@
+import logging
 import sqlite3
 import pickle
 import numpy as np
 from datetime import datetime, timezone, timedelta
 
 import config
+
+logger = logging.getLogger(__name__)
 
 
 class LocalDB:
@@ -90,7 +93,7 @@ class CloudDB:
     def __init__(self):
         self.offline = not config.SUPABASE_URL
         if self.offline:
-            print("[CloudDB] No SUPABASE_URL — running in offline mode")
+            logger.warning("No SUPABASE_URL — running in offline mode")
             self.client = None
         else:
             from supabase import create_client
@@ -105,7 +108,7 @@ class CloudDB:
             "store": config.STORE_NAME,
         }
         if self.offline:
-            print(f"[CloudDB] visit: {payload}")
+            logger.info("visit (offline): %s", payload)
             return
         self.client.table("visits").insert(payload).execute()
 
@@ -113,6 +116,6 @@ class CloudDB:
         now = datetime.now(timezone.utc).isoformat()
         payload = {"store": config.STORE_NAME, "last_seen": now}
         if self.offline:
-            print(f"[CloudDB] heartbeat: {payload}")
+            logger.debug("heartbeat (offline): %s", payload)
             return
         self.client.table("heartbeat").upsert(payload, on_conflict="store").execute()

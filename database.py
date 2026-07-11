@@ -1,6 +1,8 @@
 import logging
 import sqlite3
 import numpy as np
+import threading
+from pathlib import Path
 from datetime import datetime, timezone, timedelta
 from typing import Optional, Tuple, Dict, List
 
@@ -13,12 +15,23 @@ class LocalDB:
     # SQLite store for visitor embeddings.
     # Tracks unique visitors, visit counts, and first/last seen timestamps.
     # Optimized with numpy binary storage and in-memory cache.
+    # Thread-safe with Lock and thread-local connections.
 
     CACHE_TTL_MINUTES = 10  # Rebuild cache every 10 minutes to pick up new embeddings
 
     def __init__(self):
-        self.conn = sqlite3.connect("havas_embeddings.db", check_same_thread=False)
-        self.conn.execute("""
+        # Use absolute path relative to this file
+        self._db_path = Path(__file__).parent / "data" / "embeddings.db"
+        self._db_path.parent.mkdir(exist_ok=True)
+
+        # Thread-safe database access (reentrant lock for race conditions)
+        self._db_lock = threading.RLock()
+
+        # Thread-local storage for connections
+        self._thread_local = threading.local()
+
+        # Initialize database schema
+        self._get_connection().execute("""
             CREATE TABLE IF NOT EXISTS embeddings (
                 id          INTEGER PRIMARY KEY,
                 visitor_id  TEXT UNIQUE,
@@ -28,7 +41,7 @@ class LocalDB:
                 visit_count INTEGER DEFAULT 1
             )
         """)
-        self.conn.commit()
+        self._get_connection().commit()
         self.cleanup_old()
 
         # Cache for active gallery embeddings
@@ -36,12 +49,26 @@ class LocalDB:
         self._cache_built_at: Optional[datetime] = None
         self._embedding_dim: Optional[int] = None
 
+    def _get_connection(self) -> sqlite3.Connection:
+        """Get or create a thread-local database connection."""
+        if not hasattr(self._thread_local, 'conn'):
+            self._thread_local.conn = sqlite3.connect(str(self._db_path), timeout=30.0)
+            # Enable WAL mode for better concurrent access
+            self._thread_local.conn.execute("PRAGMA journal_mode=WAL")
+        return self._thread_local.conn
+
+    @property
+    def conn(self) -> sqlite3.Connection:
+        """Property to maintain backward compatibility."""
+        return self._get_connection()
+
     def cleanup_old(self) -> None:
         # Embeddings older than GALLERY_TTL_DAYS can no longer match anyway
         # (visitor appearance changes) and slow down find_similar.
         cutoff = (datetime.now(timezone.utc) - timedelta(days=config.GALLERY_TTL_DAYS)).isoformat()
-        self.conn.execute("DELETE FROM embeddings WHERE last_seen < ?", (cutoff,))
-        self.conn.commit()
+        with self._db_lock:
+            self.conn.execute("DELETE FROM embeddings WHERE last_seen < ?", (cutoff,))
+            self.conn.commit()
         # Invalidate cache after cleanup
         self._cache_built_at = None
 
@@ -51,24 +78,26 @@ class LocalDB:
         blob = embedding.astype(np.float32).tobytes()
         self._embedding_dim = embedding.shape[0] if embedding.ndim == 1 else embedding.shape[-1]
 
-        self.conn.execute(
-            """
-            INSERT INTO embeddings (visitor_id, embedding, first_seen, last_seen)
-            VALUES (?, ?, ?, ?)
-            """,
-            (visitor_id, blob, now, now),
-        )
-        self.conn.commit()
+        with self._db_lock:
+            self.conn.execute(
+                """
+                INSERT INTO embeddings (visitor_id, embedding, first_seen, last_seen)
+                VALUES (?, ?, ?, ?)
+                """,
+                (visitor_id, blob, now, now),
+            )
+            self.conn.commit()
         # Invalidate cache — new embedding added
         self._cache_built_at = None
 
     def _rebuild_cache(self) -> None:
         # Load all active embeddings into memory for vectorized search
         cutoff = (datetime.now(timezone.utc) - timedelta(days=config.GALLERY_TTL_DAYS)).isoformat()
-        rows = self.conn.execute(
-            "SELECT visitor_id, embedding FROM embeddings WHERE last_seen >= ?",
-            (cutoff,),
-        ).fetchall()
+        with self._db_lock:
+            rows = self.conn.execute(
+                "SELECT visitor_id, embedding FROM embeddings WHERE last_seen >= ?",
+                (cutoff,),
+            ).fetchall()
 
         self._cache.clear()
         for visitor_id, blob in rows:
@@ -114,15 +143,16 @@ class LocalDB:
         if best_sim > threshold:
             best_id = visitor_ids[best_idx]
             now = datetime.now(timezone.utc).isoformat()
-            self.conn.execute(
-                """
-                UPDATE embeddings
-                SET last_seen = ?, visit_count = visit_count + 1
-                WHERE visitor_id = ?
-                """,
-                (now, best_id),
-            )
-            self.conn.commit()
+            with self._db_lock:
+                self.conn.execute(
+                    """
+                    UPDATE embeddings
+                    SET last_seen = ?, visit_count = visit_count + 1
+                    WHERE visitor_id = ?
+                    """,
+                    (now, best_id),
+                )
+                self.conn.commit()
             # Invalidate cache — visitor updated
             self._cache_built_at = None
             return best_id, best_sim

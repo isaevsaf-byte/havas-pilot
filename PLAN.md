@@ -163,18 +163,31 @@ main()
 
 ---
 
-## [ ] T-09 — Зафиксировать версии зависимостей `~30 мин`
+## [x] T-09 — Зафиксировать версии зависимостей `~30 мин`
 **Impact: 🟡 Medium | Сложность: Low**
 
-`requirements.txt` — все пакеты без версий. Риск поломки при `pip install` в будущем.
+**Выполнено:** Все 120+ пакетов зафиксированы с точными версиями.
 
-**Действие:**
-1. Запустить `pip freeze` в рабочем окружении
-2. Обновить `requirements.txt` с точными версиями (==)
-3. Разделить на секции: core / dev / optional
+**Реализовано:**
+1. Запущен `pip freeze` для получения всех установленных версий
+2. `requirements.txt` обновлён с точными версиями (==) для каждого пакета
+3. Организовано в 5 секций:
+   - `CORE` — ML/Vision модели (torch, ultralytics, supervision, opencv, torchreid, numpy, scipy)
+   - `CLOUD` — Supabase backend (supabase, postgrest, storage3, realtime, supabase-auth/functions)
+   - `UI` — Streamlit dashboard (streamlit, plotly, pandas)
+   - `UTILITIES` — Поддержка и логирование (gdown, tensorboard, requests, python-dotenv, tqdm, Pillow)
+   - `DEV` — Тестирование и качество (pytest, pytest-cov, black, flake8, mypy)
+   - `INDIRECT` — Косвенные зависимости (все остальные пакеты, распечатаны из pip freeze)
 
-**Текущие непиннованные:**
-`ultralytics`, `supervision`, `opencv-python`, `torchreid`, `supabase`, `streamlit`, `numpy`, `torch`, `scipy`, ...
+4. Добавлены 8 тестов в `test_t09_pinned_versions.py`:
+   - Проверка что все пакеты пиннованы (==)
+   - Проверка наличия всех секций
+   - Проверка присутствия core/cloud/ui пакетов
+   - Верификация формата версии (semver)
+   - Проверка отсутствия дубликатов
+   - Проверка существования файла
+
+**Результат:** 78 тестов прошли успешно (70 старых + 8 новых).
 
 ---
 

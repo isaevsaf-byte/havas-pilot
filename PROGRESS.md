@@ -27,7 +27,7 @@
 | T-06: Устранить дублирование pipeline | ✅ | 2026-07-11 | test_with_video.py рефакторен; используются pipeline.py функции; PipelineState; 10 тестов |
 | T-07: Type hints | ✅ | 2026-07-11 | 25+ функций с типами; database, reid, detector, main, pipeline; 22 тестов |
 | T-08: Оптимизация поиска галереи | ✅ | 2026-07-11 | numpy.tobytes() вместо pickle (10-100x), in-memory cache (TTL 10 мин), vectorized matmul для косинуса |
-| T-09: Версии зависимостей | ⬜ | — | |
+| T-09: Версии зависимостей | ✅ | 2026-07-11 | pip freeze → requirements.txt с 120+ пакетами; 5 секций (CORE/CLOUD/UI/UTILITIES/DEV); 8 тестов |
 | T-10: SQLite путь + лок | ⬜ | — | |
 
 ---
@@ -105,6 +105,24 @@
 - `tests/test_t07_type_hints.py`: удален тест `test_cosine_similarity_has_hints()` (функция больше не существует)
 - Всего: 70 тестов, все прошли
 
+### Сессия 2026-07-11 — T-09
+- `requirements.txt`: обновлен с точными версиями из `pip freeze` (120+ пакетов)
+- Организовано в 5 секций:
+  - **CORE**: torch, torchvision, ultralytics, supervision, opencv-python, torchreid, numpy, scipy
+  - **CLOUD**: supabase, supabase-auth, supabase-functions, postgrest, storage3, realtime
+  - **UI**: streamlit, plotly, pandas
+  - **UTILITIES**: gdown, tensorboard, requests, python-dotenv, tqdm, Pillow
+  - **DEV**: pytest, pytest-cov, black, flake8, mypy
+  - **INDIRECT**: все остальные зависимости (распечатаны из pip freeze для полной воспроизводимости)
+- `tests/test_t09_pinned_versions.py`: 8 новых тестов
+  - Все пакеты пиннованы (==)
+  - Наличие всех секций
+  - Проверка core/cloud/ui пакетов
+  - Формат версии (semver)
+  - Отсутствие дубликатов
+  - Существование файла
+- Всего: 78 тестов, все прошли
+
 ---
 
 ## Метрики (baseline)
@@ -118,5 +136,7 @@
 | `print()` вызовов | ~6 (только утилиты CLI: setup_supabase.py, check_imports.py, seed_test_data.py) |
 | Критических багов | 0 (было 2, исправлены в T-01) |
 | Дублирующихся файлов | 0 (было 1, удалён в T-01) |
-| Тестов | 70 (было 42; +22 в T-07, +7 в T-08) |
+| Тестов | 78 (было 42; +22 в T-07, +7 в T-08, +8 в T-09) |
 | Производительность поиска | <50ms для 100 embeddings (было O(n) с pickle) |
+| Пиннованные версии | 120+ (было 12 без версий, зафиксировано в T-09) |
+| Воспроизводимость сборки | ✅ (requirements.txt с exact versions) |

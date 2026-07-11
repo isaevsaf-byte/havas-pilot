@@ -32,20 +32,6 @@ def check_function_signature_has_hints(func, param_names, has_return=True):
 class TestDatabaseTypeHints:
     """Verify type hints in database.py"""
 
-    def test_cosine_similarity_has_hints(self):
-        """_cosine_similarity should have parameter and return type hints."""
-        import ast
-        import inspect
-
-        # Read source to verify type hints are present
-        source = inspect.getsource(inspect.getmodule(
-            __import__("database")
-        )._cosine_similarity)
-
-        # Check that type hints are in the source
-        assert "np.ndarray" in source, "Missing type hint for numpy array parameter"
-        assert "-> float" in source, "Missing return type float"
-
     def test_localdb_find_similar_signature(self):
         """LocalDB.find_similar should have type hints."""
         import inspect

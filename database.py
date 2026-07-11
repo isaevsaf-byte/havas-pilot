@@ -1,9 +1,8 @@
 import logging
 import sqlite3
-import pickle
 import numpy as np
 from datetime import datetime, timezone, timedelta
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Dict, List
 
 import config
 
@@ -13,6 +12,9 @@ logger = logging.getLogger(__name__)
 class LocalDB:
     # SQLite store for visitor embeddings.
     # Tracks unique visitors, visit counts, and first/last seen timestamps.
+    # Optimized with numpy binary storage and in-memory cache.
+
+    CACHE_TTL_MINUTES = 10  # Rebuild cache every 10 minutes to pick up new embeddings
 
     def __init__(self):
         self.conn = sqlite3.connect("havas_embeddings.db", check_same_thread=False)
@@ -29,16 +31,26 @@ class LocalDB:
         self.conn.commit()
         self.cleanup_old()
 
+        # Cache for active gallery embeddings
+        self._cache: Dict[str, np.ndarray] = {}  # visitor_id -> embedding
+        self._cache_built_at: Optional[datetime] = None
+        self._embedding_dim: Optional[int] = None
+
     def cleanup_old(self) -> None:
         # Embeddings older than GALLERY_TTL_DAYS can no longer match anyway
         # (visitor appearance changes) and slow down find_similar.
         cutoff = (datetime.now(timezone.utc) - timedelta(days=config.GALLERY_TTL_DAYS)).isoformat()
         self.conn.execute("DELETE FROM embeddings WHERE last_seen < ?", (cutoff,))
         self.conn.commit()
+        # Invalidate cache after cleanup
+        self._cache_built_at = None
 
     def save_embedding(self, visitor_id: str, embedding: np.ndarray) -> None:
         now = datetime.now(timezone.utc).isoformat()
-        blob = pickle.dumps(embedding)
+        # Store as binary (numpy) instead of pickle — 10-100x faster
+        blob = embedding.astype(np.float32).tobytes()
+        self._embedding_dim = embedding.shape[0] if embedding.ndim == 1 else embedding.shape[-1]
+
         self.conn.execute(
             """
             INSERT INTO embeddings (visitor_id, embedding, first_seen, last_seen)
@@ -47,23 +59,60 @@ class LocalDB:
             (visitor_id, blob, now, now),
         )
         self.conn.commit()
+        # Invalidate cache — new embedding added
+        self._cache_built_at = None
 
-    def find_similar(self, embedding: np.ndarray, threshold: float) -> Tuple[Optional[str], float]:
+    def _rebuild_cache(self) -> None:
+        # Load all active embeddings into memory for vectorized search
         cutoff = (datetime.now(timezone.utc) - timedelta(days=config.GALLERY_TTL_DAYS)).isoformat()
         rows = self.conn.execute(
             "SELECT visitor_id, embedding FROM embeddings WHERE last_seen >= ?",
             (cutoff,),
         ).fetchall()
 
-        best_id, best_sim = None, 0.0
+        self._cache.clear()
         for visitor_id, blob in rows:
-            stored = pickle.loads(blob)
-            sim = _cosine_similarity(embedding, stored)
-            if sim > best_sim:
-                best_sim = sim
-                best_id = visitor_id
+            if self._embedding_dim is None:
+                # Infer dimension from first blob
+                self._embedding_dim = len(blob) // 4  # float32 = 4 bytes
+            embedding = np.frombuffer(blob, dtype=np.float32, count=self._embedding_dim)
+            self._cache[visitor_id] = embedding
+
+        self._cache_built_at = datetime.now(timezone.utc)
+        logger.debug(f"Built cache with {len(self._cache)} embeddings (dim={self._embedding_dim})")
+
+    def _is_cache_valid(self) -> bool:
+        if self._cache_built_at is None:
+            return False
+        age = datetime.now(timezone.utc) - self._cache_built_at
+        return age.total_seconds() < self.CACHE_TTL_MINUTES * 60
+
+    def find_similar(self, embedding: np.ndarray, threshold: float) -> Tuple[Optional[str], float]:
+        # Ensure cache is built and valid
+        if not self._is_cache_valid():
+            self._rebuild_cache()
+
+        if not self._cache:
+            return None, 0.0
+
+        embedding = embedding.astype(np.float32)
+
+        # Vectorized search: build matrix and use dot product
+        visitor_ids = list(self._cache.keys())
+        gallery_matrix = np.array([self._cache[vid] for vid in visitor_ids])  # (n_visitors, D)
+
+        # Cosine similarity = (A @ B) / (||A|| * ||B||)
+        # Normalize embeddings once
+        embedding_norm = embedding / (np.linalg.norm(embedding) + 1e-8)
+        gallery_norms = gallery_matrix / (np.linalg.norm(gallery_matrix, axis=1, keepdims=True) + 1e-8)
+
+        # Vectorized dot product
+        similarities = gallery_norms @ embedding_norm  # (n_visitors,)
+        best_idx = int(np.argmax(similarities))
+        best_sim = float(similarities[best_idx])
 
         if best_sim > threshold:
+            best_id = visitor_ids[best_idx]
             now = datetime.now(timezone.utc).isoformat()
             self.conn.execute(
                 """
@@ -74,17 +123,11 @@ class LocalDB:
                 (now, best_id),
             )
             self.conn.commit()
+            # Invalidate cache — visitor updated
+            self._cache_built_at = None
             return best_id, best_sim
 
         return None, 0.0
-
-
-def _cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
-    a, b = np.array(a, dtype=float), np.array(b, dtype=float)
-    denom = np.linalg.norm(a) * np.linalg.norm(b)
-    if denom == 0:
-        return 0.0
-    return float(np.dot(a, b) / denom)
 
 
 class CloudDB:

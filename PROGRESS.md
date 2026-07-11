@@ -26,7 +26,7 @@
 | T-05: Рефакторинг main() | ✅ | 2026-07-11 | pipeline.py с 4 функциями; main() loop сокращен; 18 тестов в test_t05_main_refactor.py |
 | T-06: Устранить дублирование pipeline | ✅ | 2026-07-11 | test_with_video.py рефакторен; используются pipeline.py функции; PipelineState; 10 тестов |
 | T-07: Type hints | ✅ | 2026-07-11 | 25+ функций с типами; database, reid, detector, main, pipeline; 22 тестов |
-| T-08: Оптимизация поиска галереи | ⬜ | — | |
+| T-08: Оптимизация поиска галереи | ✅ | 2026-07-11 | numpy.tobytes() вместо pickle (10-100x), in-memory cache (TTL 10 мин), vectorized matmul для косинуса |
 | T-09: Версии зависимостей | ⬜ | — | |
 | T-10: SQLite путь + лок | ⬜ | — | |
 
@@ -91,6 +91,20 @@
 - `tests/test_t07_type_hints.py`: 22 новых теста (проверка сигнатур, импортов, типов)
 - Все 64 теста прошли успешно
 
+### Сессия 2026-07-11 — T-08
+- **Оптимизация поиска по галерее:**
+  1. Замена `pickle.dumps/loads()` на `numpy.tobytes/frombuffer()` — 10-100x быстрее (float32 binary vs pickle overhead)
+  2. In-memory кеш активной галереи: `self._cache` + TTL 10 мин (пересчет при истечении)
+  3. Векторизованный поиск: `gallery_matrix @ query_vector` вместо цикла по embeddings
+- `database.py`: переписан `LocalDB.__init__()`, `save_embedding()`, `find_similar()`; добавлены методы `_rebuild_cache()`, `_is_cache_valid()`; удалена функция `_cosine_similarity()`
+- `tests/test_t08_gallery_optimization.py`: 7 новых тестов
+  - Binary storage (не pickle)
+  - Cache rebuild/validity check
+  - Vectorized cosine similarity
+  - Performance test: 100 embeddings, <50ms per search
+- `tests/test_t07_type_hints.py`: удален тест `test_cosine_similarity_has_hints()` (функция больше не существует)
+- Всего: 70 тестов, все прошли
+
 ---
 
 ## Метрики (baseline)
@@ -98,10 +112,11 @@
 | Метрика | Текущее |
 |---------|---------|
 | Файлов Python | 12 |
-| Строк кода | ~862 |
+| Строк кода | ~880 (было ~862) |
 | Функций с type hints | 25+/33 (~76%) |
 | Магических чисел | 0 (было 20+, устранены в T-02) |
 | `print()` вызовов | ~6 (только утилиты CLI: setup_supabase.py, check_imports.py, seed_test_data.py) |
-| Критических багов | 0 (было 2, исправлены) |
-| Дублирующихся файлов | 0 (было 1, удалён) |
-| Тестов | 64 (было 42) |
+| Критических багов | 0 (было 2, исправлены в T-01) |
+| Дублирующихся файлов | 0 (было 1, удалён в T-01) |
+| Тестов | 70 (было 42; +22 в T-07, +7 в T-08) |
+| Производительность поиска | <50ms для 100 embeddings (было O(n) с pickle) |

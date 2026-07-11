@@ -133,27 +133,33 @@ main()
 
 ---
 
-## [ ] T-08 — Оптимизация поиска по галерее (vectorize + кеш) `~1 час`
+## [x] T-08 — Оптимизация поиска по галерее (vectorize + кеш) `~1 час`
 **Impact: 🟡 Medium | Сложность: Medium**
 
-`find_similar()` в `database.py` — линейный поиск O(n) с десериализацией pickle каждый вызов.
+**Выполнено:** Оптимизирована `find_similar()` в `database.py` (3 улучшения).
 
-**Проблемы:**
-- `pickle.loads()` на каждый embedding при каждом сравнении → медленно
-- Запрос к БД + десериализация на каждого посетителя у линии
-- При 500 embeddings в галерее — 500 pickle.loads() на каждое событие
+**Реализованные оптимизации:**
+1. **Замена pickle на numpy.tobytes()** — 10-100x быстрее
+   - `save_embedding()`: `embedding.tobytes()` вместо `pickle.dumps()`
+   - `find_similar()`: `np.frombuffer()` вместо `pickle.loads()`
+   - Удалена функция `_cosine_similarity()` (заменена на векторизацию)
 
-**Оптимизации:**
-1. Заменить `pickle` на `numpy.frombuffer()` / `embedding.tobytes()` — в 10-100x быстрее
-2. In-memory кеш активной галереи (TTL = GALLERY_TTL_DAYS):
-   ```python
-   self._cache: dict[str, np.ndarray] = {}
-   self._cache_built_at: datetime | None = None
-   ```
-3. Одно numpy матричное вычисление вместо цикла:
-   ```python
-   similarities = gallery_matrix @ query_vector  # vectorized cosine
-   ```
+2. **In-memory кеш активной галереи** с TTL
+   - `self._cache: dict[str, np.ndarray]` — хранит active embeddings
+   - `self._cache_built_at: datetime | None` — время создания
+   - `CACHE_TTL_MINUTES = 10` — пересчет кеша каждые 10 минут
+
+3. **Векторизованный поиск** матричным умножением
+   - Собрать все embeddings в матрицу (n_visitors, D)
+   - Нормализация: `gallery @ query / (||gallery|| * ||query||)`
+   - Одно `.argmax()` вместо цикла for
+
+**Тесты:** 7 новых тестов в `test_t08_gallery_optimization.py`:
+- Binary storage (не pickle)
+- Cache rebuild и TTL
+- Vectorized search (находит похожие)
+- Performance: 100 embeddings — <50ms per search
+- Всего: 70 тестов, все прошли
 
 ---
 

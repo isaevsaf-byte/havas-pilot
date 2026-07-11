@@ -21,8 +21,8 @@
 |--------|--------|--------|---------|
 | T-01: Критические баги (timezone, except, дубликат) | ✅ | 2026-07-11 | timezone.utc в main.py+test_with_video.py; except Exception в app.py; удалён reid_backup.py |
 | T-02: Централизация конфига | ✅ | 2026-07-11 | 9 констант добавлены в config.py (4 секции); заменены хардкоды в main.py, detector.py, reid.py, dashboard/app.py |
-| T-03: print() → logging | ⬜ | — | |
-| T-04: Thread safety | ⬜ | — | |
+| T-03: print() → logging | ✅ | 2026-07-11 | logger.py создан (RotatingFileHandler 10MB×3); 14 print() заменены в main.py, database.py, test_with_video.py |
+| T-04: Thread safety | ✅ | 2026-07-11 | PipelineState в state.py (Lock на _first_positions + _last_counted); 14 тестов |
 | T-05: Рефакторинг main() | ⬜ | — | |
 | T-06: Устранить дублирование pipeline | ⬜ | — | |
 | T-07: Type hints | ⬜ | — | |
@@ -48,6 +48,17 @@
 - `dashboard/app.py`: заменён 1 хардкод (30)
 - `test_with_video.py`: заменён хардкод 40 → `config.LINE_TOLERANCE_PX`
 
+### Сессия 2026-07-11 — T-03
+- `logger.py`: новый модуль — `setup_logging()` с консольным + `RotatingFileHandler` (10 MB × 3 файла), формат `%(asctime)s [%(levelname)s] %(name)s: %(message)s`
+- `main.py`: 4 `print()` → `logger.warning/error/info`; удалена лишняя переменная `ts`; добавлены `import logging`, `from logger import setup_logging`
+- `database.py`: 3 `print()` → `logger.warning/info/debug`; добавлены `import logging`, `logger = logging.getLogger(__name__)`
+- `test_with_video.py`: 7 `print()` → `logger.*`; добавлены `import logging`, `from logger import setup_logging`
+
+### Сессия 2026-07-11 — T-04
+- `state.py`: новый модуль — `PipelineState` с `threading.Lock`; методы `record_first_position`, `should_count`, `get_direction`
+- `main.py`: удалены глобальные `first_positions`, `last_counted` и standalone-функции; `state = PipelineState()` в `main()`; импорт из `state.py`
+- `tests/test_t04_pipeline_state.py`: 14 тестов — unit (3 класса) + конкурентные (3 теста), все прошли
+
 ### Сессия 2026-07-11 — T-01
 - `main.py`: добавлен `timezone`, `datetime.now()` → `datetime.now(timezone.utc)` для DB timestamp
 - `test_with_video.py`: то же самое для `cloud_db.log_visit()`
@@ -64,6 +75,6 @@
 | Строк кода | ~862 |
 | Функций без type hints | 33/33 |
 | Магических чисел | 0 (было 20+, устранены в T-02) |
-| `print()` вызовов | ~20 |
+| `print()` вызовов | ~6 (только утилиты CLI: setup_supabase.py, check_imports.py, seed_test_data.py) |
 | Критических багов | 0 (было 2, исправлены) |
 | Дублирующихся файлов | 0 (было 1, удалён) |

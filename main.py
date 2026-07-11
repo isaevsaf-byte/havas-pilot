@@ -8,6 +8,7 @@ import cv2
 
 import config
 from logger import setup_logging
+from state import PipelineState
 from detector import PersonDetector
 from tracker import PersonTracker
 from reid import ReIDChecker
@@ -17,8 +18,6 @@ setup_logging()
 logger = logging.getLogger(__name__)
 
 # --- State ---
-first_positions = {}   # track_id -> cy at first sighting (direction reference)
-last_counted = {}      # track_id -> unix time of last count (cooldown)
 event_queue = queue.Queue()
 
 
@@ -30,24 +29,6 @@ def connect_camera():
         logger.warning("Камера недоступна, жду %d секунд...", config.CAMERA_RECONNECT_DELAY_SEC)
         cap.release()
         time.sleep(config.CAMERA_RECONNECT_DELAY_SEC)
-
-
-def should_count(track_id):
-    now = time.time()
-    last = last_counted.get(track_id)
-    if last is not None and (now - last) < config.COOLDOWN_SECONDS:
-        return False
-    last_counted[track_id] = now
-    return True
-
-
-def get_direction(track_id, cy):
-    # Compare against where the track first appeared, not the previous frame:
-    # frame-to-frame bbox jitter flips direction, entry point does not.
-    first = first_positions.get(track_id)
-    if first is None or cy == first:
-        return "IN"
-    return "IN" if cy > first else "OUT"
 
 
 def cloud_sender(cloud_db):
@@ -72,6 +53,7 @@ def main():
     local_db = LocalDB()
     cloud_db = CloudDB()
     reid = ReIDChecker(local_db)
+    state = PipelineState()
 
     sender = threading.Thread(target=cloud_sender, args=(cloud_db,), daemon=True)
     sender.start()
@@ -100,18 +82,16 @@ def main():
             x1, y1, x2, y2 = bbox
             cy = (y1 + y2) / 2
 
-            # Remember where this track first appeared (direction reference)
-            if track_id not in first_positions:
-                first_positions[track_id] = cy
+            state.record_first_position(track_id, cy)
 
             color = (200, 200, 200)
             label = ""
 
-            if abs(cy - line_y) < config.LINE_TOLERANCE_PX and should_count(track_id):
+            if abs(cy - line_y) < config.LINE_TOLERANCE_PX and state.should_count(track_id):
                 crop = frame[y1:y2, x1:x2]
                 result = reid.check(crop, track_id)
                 if result is not None:
-                    direction = get_direction(track_id, cy)
+                    direction = state.get_direction(track_id, cy)
                     event_queue.put(("visit", {
                         "timestamp": datetime.now(timezone.utc).isoformat(),
                         "direction": direction,

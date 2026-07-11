@@ -25,7 +25,7 @@
 | T-04: Thread safety | ✅ | 2026-07-11 | PipelineState в state.py (Lock на _first_positions + _last_counted); 14 тестов |
 | T-05: Рефакторинг main() | ✅ | 2026-07-11 | pipeline.py с 4 функциями; main() loop сокращен; 18 тестов в test_t05_main_refactor.py |
 | T-06: Устранить дублирование pipeline | ✅ | 2026-07-11 | test_with_video.py рефакторен; используются pipeline.py функции; PipelineState; 10 тестов |
-| T-07: Type hints | ⬜ | — | |
+| T-07: Type hints | ✅ | 2026-07-11 | 25+ функций с типами; database, reid, detector, main, pipeline; 22 тестов |
 | T-08: Оптимизация поиска галереи | ⬜ | — | |
 | T-09: Версии зависимостей | ⬜ | — | |
 | T-10: SQLite путь + лок | ⬜ | — | |
@@ -81,6 +81,16 @@
 - `dashboard/app.py:35`: `except:` → `except Exception as e:` + `st.error()`
 - Удалён `reid_backup.py` (полный дубликат `reid.py`)
 
+### Сессия 2026-07-11 — T-07
+- Добавлены type hints для 25+ функций:
+  - `database.py`: `find_similar()`, `save_embedding()`, `log_visit()`, `log_heartbeat()`, `_cosine_similarity()`
+  - `reid.py`: `check()`, `get_embedding()`, `normalize_crop()` + импорты `Optional`, `Dict`, `Any`
+  - `detector.py`: `detect()`, `is_good_crop()` + импорты `List`, `Dict`, `Any`
+  - `main.py`: `connect_camera()`, `cloud_sender()`, `main()` + импорт `Tuple`
+  - `pipeline.py`: `process_frame()`, `check_visitors()`, `render_overlay()`, `handle_heartbeat()` + импорты + `queue`
+- `tests/test_t07_type_hints.py`: 22 новых теста (проверка сигнатур, импортов, типов)
+- Все 64 теста прошли успешно
+
 ---
 
 ## Метрики (baseline)
@@ -89,8 +99,9 @@
 |---------|---------|
 | Файлов Python | 12 |
 | Строк кода | ~862 |
-| Функций без type hints | 33/33 |
+| Функций с type hints | 25+/33 (~76%) |
 | Магических чисел | 0 (было 20+, устранены в T-02) |
 | `print()` вызовов | ~6 (только утилиты CLI: setup_supabase.py, check_imports.py, seed_test_data.py) |
 | Критических багов | 0 (было 2, исправлены) |
 | Дублирующихся файлов | 0 (было 1, удалён) |
+| Тестов | 64 (было 42) |

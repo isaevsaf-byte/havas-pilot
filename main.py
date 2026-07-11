@@ -2,13 +2,13 @@ import logging
 import queue
 import threading
 import time
-from datetime import datetime, timezone
 
 import cv2
 
 import config
 from logger import setup_logging
 from state import PipelineState
+from pipeline import process_frame, check_visitors, render_overlay, handle_heartbeat
 from detector import PersonDetector
 from tracker import PersonTracker
 from reid import ReIDChecker
@@ -73,50 +73,16 @@ def main():
         height, width = frame.shape[:2]
         line_y = int(height * config.LINE_POSITION)
 
-        detections = detector.detect(frame)
-        tracks = tracker.update(detections, frame)
-
-        for track in tracks:
-            bbox = track["bbox"]
-            track_id = track["track_id"]
-            x1, y1, x2, y2 = bbox
-            cy = (y1 + y2) / 2
-
-            state.record_first_position(track_id, cy)
-
-            color = (200, 200, 200)
-            label = ""
-
-            if abs(cy - line_y) < config.LINE_TOLERANCE_PX and state.should_count(track_id):
-                crop = frame[y1:y2, x1:x2]
-                result = reid.check(crop, track_id)
-                if result is not None:
-                    direction = state.get_direction(track_id, cy)
-                    event_queue.put(("visit", {
-                        "timestamp": datetime.now(timezone.utc).isoformat(),
-                        "direction": direction,
-                        "is_repeat": result["status"] == "repeat",
-                        "visitor_id": result["visitor_id"],
-                    }))
-                    short_id = result["visitor_id"][:8]
-                    logger.info("%s | %s | visitor_%s", direction, result["status"], short_id)
-
-                    color = (0, 255, 0) if result["status"] == "new" else (255, 0, 0)
-                    label = f"{direction} | {result['status']}"
-
-            if not config.HEADLESS:
-                cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
-                if label:
-                    cv2.putText(frame, label, (x1, y1 - 8),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 1)
-
-        frame_count += 1
-        if frame_count >= config.HEARTBEAT_EVERY_N_FRAMES:
-            event_queue.put(("heartbeat", {}))
-            frame_count = 0
+        tracks = process_frame(frame, detector, tracker)
+        tracks_with_results = check_visitors(tracks, frame, reid, state, line_y, event_queue)
 
         if not config.HEADLESS:
-            cv2.line(frame, (0, line_y), (width, line_y), (0, 255, 255), 2)
+            render_overlay(frame, tracks_with_results, line_y)
+
+        frame_count += 1
+        frame_count = handle_heartbeat(frame_count, event_queue)
+
+        if not config.HEADLESS:
             cv2.imshow("Havas Pilot", frame)
             if cv2.waitKey(1) & 0xFF == ord("q"):
                 break

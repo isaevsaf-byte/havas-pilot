@@ -83,7 +83,7 @@ with _state_lock:
 
 ---
 
-## [ ] T-05 — Рефакторинг `main()` — разбить на функции `~1 час`
+## [x] T-05 — Рефакторинг `main()` — разбить на функции `~1 час`
 **Impact: 🟡 Medium | Сложность: Medium**
 
 `main()` в `main.py` — 78 строк, 4 разных ответственности. `main()` в `test_with_video.py` — 88 строк аналогичного кода.
@@ -101,23 +101,16 @@ main()
 
 ---
 
-## [ ] T-06 — Устранить дублирование `main.py` / `test_with_video.py` `~1 час`
+## [x] T-06 — Устранить дублирование `main.py` / `test_with_video.py` `~1 час`
 **Impact: 🟡 Medium | Сложность: Medium**
 
-Два файла содержат почти идентичную логику обработки кадров:
-- `should_count()` — реализован в `main.py`, переписан инлайн в `test_with_video.py`
-- `get_direction()` — разные реализации одного алгоритма
-- Весь processing loop (~60 строк) — дублирован
+**Выполнено:** Оба файла теперь используют общие функции из `pipeline.py`.
 
-**Решение:** создать `pipeline.py` с общей логикой:
-```python
-# pipeline.py
-def run_pipeline(video_source, detector, tracker, reid, db, cfg): ...
-def should_count(track_id, last_counted, cooldown): ...
-def get_direction(first_pos, current_pos): ...
-```
-
-`main.py` и `test_with_video.py` импортируют из `pipeline.py`.
+- `test_with_video.py` рефакторен: удалены ~60 строк дублирующегося кода
+- Используются `process_frame()`, `check_visitors()`, `render_overlay()`, `handle_heartbeat()` из `pipeline.py`
+- Введён `PipelineState()` вместо ручного управления `prev_positions` и `last_counted`
+- Добавлена функция `process_events()` для обработки очереди событий (работает синхронно в test_with_video)
+- Тесты: 10 новых тестов в `test_t06_eliminate_duplication.py`, все 42 теста проходят
 
 ---
 

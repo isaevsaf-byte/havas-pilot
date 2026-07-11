@@ -1,14 +1,15 @@
 import logging
 import os
+import queue
 import subprocess
-import time
-from datetime import datetime, timezone
 from collections import defaultdict
 
 import cv2
 
 import config
 from logger import setup_logging
+from state import PipelineState
+from pipeline import process_frame, check_visitors, render_overlay, handle_heartbeat
 from detector import PersonDetector
 from tracker import PersonTracker
 from reid import ReIDChecker
@@ -30,6 +31,32 @@ def download_video():
     logger.info("Сохранено: %s", VIDEO_PATH)
 
 
+def process_events(event_queue, cloud_db, stats):
+    """Process queued events and update stats.
+
+    Args:
+        event_queue: Queue with (kind, payload) tuples
+        cloud_db: CloudDB instance
+        stats: Stats dict to update
+    """
+    while not event_queue.empty():
+        try:
+            kind, payload = event_queue.get_nowait()
+            if kind == "visit":
+                cloud_db.log_visit(**payload)
+                visitor_id = payload["visitor_id"]
+                direction = payload["direction"]
+                is_repeat = payload["is_repeat"]
+                status = "repeat" if is_repeat else "new"
+                stats["total"] += 1
+                stats[status] += 1
+                stats[direction] += 1
+            elif kind == "heartbeat":
+                cloud_db.log_heartbeat()
+        except queue.Empty:
+            break
+
+
 def main():
     download_video()
 
@@ -45,10 +72,8 @@ def main():
     _PD.is_good_crop = lambda self, bbox: (bbox[2]-bbox[0]) > 30 and (bbox[3]-bbox[1]) > 50
 
     reid = ReIDChecker(local_db)
-
-    prev_positions = {}
-    last_counted = {}
-
+    state = PipelineState()
+    event_queue = queue.Queue()
     stats = defaultdict(int)
 
     cap = cv2.VideoCapture(VIDEO_PATH)
@@ -67,48 +92,15 @@ def main():
         height, width = frame.shape[:2]
         line_y = int(height * config.LINE_POSITION)
 
-        detections = detector.detect(frame)
-        tracks = tracker.update(detections, frame)
-
-        for track in tracks:
-            bbox = track["bbox"]
-            track_id = track["track_id"]
-            x1, y1, x2, y2 = bbox
-            cy = (y1 + y2) / 2
-
-            # Direction tracking (always update)
-            prev_cy = prev_positions.get(track_id)
-            prev_positions[track_id] = cy
-            direction = "IN" if (prev_cy is None or cy > prev_cy) else "OUT"
-
-            if abs(cy - line_y) < config.LINE_TOLERANCE_PX:
-                now = time.time()
-                last = last_counted.get(track_id)
-                if last is not None and (now - last) < config.COOLDOWN_SECONDS:
-                    continue
-                last_counted[track_id] = now
-
-                crop = frame[y1:y2, x1:x2]
-                result = reid.check(crop, track_id)
-                if result is None:
-                    continue
-
-                is_repeat = result["status"] == "repeat"
-                cloud_db.log_visit(
-                    timestamp=datetime.now(timezone.utc).isoformat(),
-                    direction=direction,
-                    is_repeat=is_repeat,
-                    visitor_id=result["visitor_id"],
-                )
-
-                short_id = result["visitor_id"][:8]
-                logger.info("%s | %s | visitor_%s", direction, result["status"], short_id)
-
-                stats["total"] += 1
-                stats[result["status"]] += 1
-                stats[direction] += 1
+        tracks = process_frame(frame, detector, tracker)
+        tracks_with_results = check_visitors(tracks, frame, reid, state, line_y, event_queue)
+        render_overlay(frame, tracks_with_results, line_y)
 
         frame_count += 1
+        frame_count = handle_heartbeat(frame_count, event_queue)
+
+        # Process events immediately (no separate cloud_sender thread in test)
+        process_events(event_queue, cloud_db, stats)
 
     cap.release()
 

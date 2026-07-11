@@ -23,8 +23,8 @@
 | T-02: Централизация конфига | ✅ | 2026-07-11 | 9 констант добавлены в config.py (4 секции); заменены хардкоды в main.py, detector.py, reid.py, dashboard/app.py |
 | T-03: print() → logging | ✅ | 2026-07-11 | logger.py создан (RotatingFileHandler 10MB×3); 14 print() заменены в main.py, database.py, test_with_video.py |
 | T-04: Thread safety | ✅ | 2026-07-11 | PipelineState в state.py (Lock на _first_positions + _last_counted); 14 тестов |
-| T-05: Рефакторинг main() | ⬜ | — | |
-| T-06: Устранить дублирование pipeline | ⬜ | — | |
+| T-05: Рефакторинг main() | ✅ | 2026-07-11 | pipeline.py с 4 функциями; main() loop сокращен; 18 тестов в test_t05_main_refactor.py |
+| T-06: Устранить дублирование pipeline | ✅ | 2026-07-11 | test_with_video.py рефакторен; используются pipeline.py функции; PipelineState; 10 тестов |
 | T-07: Type hints | ⬜ | — | |
 | T-08: Оптимизация поиска галереи | ⬜ | — | |
 | T-09: Версии зависимостей | ⬜ | — | |
@@ -58,6 +58,22 @@
 - `state.py`: новый модуль — `PipelineState` с `threading.Lock`; методы `record_first_position`, `should_count`, `get_direction`
 - `main.py`: удалены глобальные `first_positions`, `last_counted` и standalone-функции; `state = PipelineState()` в `main()`; импорт из `state.py`
 - `tests/test_t04_pipeline_state.py`: 14 тестов — unit (3 класса) + конкурентные (3 теста), все прошли
+
+### Сессия 2026-07-11 — T-05
+- `pipeline.py`: новый модуль с 4 функциями: `process_frame()`, `check_visitors()`, `render_overlay()`, `handle_heartbeat()`
+- `main.py`: импортирует функции из `pipeline.py`; main() loop сокращен с 76 до 42 строк
+- `tests/test_t05_main_refactor.py`: 18 юнит-тестов (процесс кадра, проверка визиторов, рендеринг, хартбит)
+- Все тесты прошли
+
+### Сессия 2026-07-11 — T-06
+- `test_with_video.py`: полностью рефакторен на использование `pipeline.py`
+- Удалены 60 строк дублирующегося кода (inline detection/tracking/visitor logic)
+- Заменены на вызовы `process_frame()`, `check_visitors()`, `render_overlay()`, `handle_heartbeat()`
+- Введён `PipelineState()` вместо ручного `prev_positions` + `last_counted` дicts
+- Добавлена функция `process_events()` для синхронной обработки очереди событий
+- Добавлены импорты: `queue`, `PipelineState`, `pipeline` функции
+- `tests/test_t06_eliminate_duplication.py`: 10 новых тестов для проверки структурных изменений
+- Все 42 теста (старые + новые) прошли успешно
 
 ### Сессия 2026-07-11 — T-01
 - `main.py`: добавлен `timezone`, `datetime.now()` → `datetime.now(timezone.utc)` для DB timestamp

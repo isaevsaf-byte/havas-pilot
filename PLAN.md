@@ -191,28 +191,46 @@ main()
 
 ---
 
-## [ ] T-10 — Абсолютный путь к SQLite + убрать `check_same_thread=False` `~45 мин`
+## [x] T-10 — Абсолютный путь к SQLite + убрать `check_same_thread=False` `~45 мин`
 **Impact: 🟡 Medium | Сложность: Medium**
 
-**Проблема 1:** `database.py:14`
-```python
-self.conn = sqlite3.connect("havas_embeddings.db", check_same_thread=False)
-```
-Относительный путь — файл создаётся в `cwd`, который может быть разным.
+**Выполнено:** Реализована полная thread-safety без `check_same_thread=False`.
 
-**Проблема 2:** `check_same_thread=False` + многопоточность — потенциальная порча данных.
+**Реализованные улучшения:**
+1. **Абсолютный путь к базе**
+   - `db_path = Path(__file__).parent / "data" / "embeddings.db"`
+   - Директория автоматически создаётся при инициализации
+   - Файл теперь всегда в одном месте независимо от `cwd`
 
-**Фикс:**
-```python
-db_path = Path(__file__).parent / "data" / "embeddings.db"
-db_path.parent.mkdir(exist_ok=True)
-self._db_lock = threading.Lock()
-self.conn = sqlite3.connect(str(db_path))
+2. **Удалено `check_same_thread=False`**
+   - Использование thread-local хранилища для connections (threading.local)
+   - Каждый поток получает свой connection через `_get_connection()`
+   - Избегаем проблем с SQLite3 в многопоточной среде
 
-# При каждом запросе:
-with self._db_lock:
-    self.conn.execute(...)
-```
+3. **Threading.RLock вместо Lock**
+   - Защита от race conditions на уровне приложения
+   - Reentrant lock позволяет вложенным вызовам не блокироваться
+
+4. **WAL режим для SQLite**
+   - `PRAGMA journal_mode=WAL` для улучшения конкурентного доступа
+   - Таймаут 30 сек для операций БД
+
+**Реализация:**
+- `_db_path`: абсолютный путь к embeddings.db
+- `_db_lock`: RLock для синхронизации shared state
+- `_thread_local`: threading.local для per-thread connections
+- `_get_connection()`: метод получения/создания connection для текущего потока
+- `conn` property: для обратной совместимости
+
+**Тесты:** 11 новых тестов в `test_t10_thread_safe_db.py`:
+- Валидация абсолютного пути
+- Проверка thread-local connections (разные connections в разных потоках)
+- Presence of Lock и thread-local storage
+- Отсутствие `check_same_thread=False` в коде
+- WAL mode enabled
+- Базовые операции и concurrent access (без crashes)
+
+Всего: 89 тестов прошли (78 старых + 11 новых)
 
 ---
 

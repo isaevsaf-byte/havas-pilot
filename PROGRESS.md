@@ -28,7 +28,7 @@
 | T-07: Type hints | ✅ | 2026-07-11 | 25+ функций с типами; database, reid, detector, main, pipeline; 22 тестов |
 | T-08: Оптимизация поиска галереи | ✅ | 2026-07-11 | numpy.tobytes() вместо pickle (10-100x), in-memory cache (TTL 10 мин), vectorized matmul для косинуса |
 | T-09: Версии зависимостей | ✅ | 2026-07-11 | pip freeze → requirements.txt с 120+ пакетами; 5 секций (CORE/CLOUD/UI/UTILITIES/DEV); 8 тестов |
-| T-10: SQLite путь + лок | ⬜ | — | |
+| T-10: SQLite путь + лок | ✅ | 2026-07-11 | thread-local connections + RLock + absolute path + WAL mode |
 
 ---
 
@@ -123,6 +123,25 @@
   - Существование файла
 - Всего: 78 тестов, все прошли
 
+### Сессия 2026-07-11 — T-10
+- **Thread-safety без `check_same_thread=False`:**
+  1. Абсолютный путь: `Path(__file__).parent / "data" / "embeddings.db"`
+  2. Thread-local connections: каждый поток получает свой connection (threading.local)
+  3. RLock для защиты shared state (_cache, _cache_built_at, _embedding_dim)
+  4. WAL mode (PRAGMA journal_mode=WAL) для улучшения конкурентного доступа
+  5. Таймаут 30 сек для операций БД
+- `database.py`:
+  - Новый метод `_get_connection()` возвращает thread-local connection
+  - Свойство `conn` для обратной совместимости (использует `_get_connection()`)
+  - Инициализация: `_db_path`, `_db_lock` (RLock), `_thread_local` (threading.local)
+- `tests/test_t10_thread_safe_db.py`: 11 новых тестов
+  - TestAbsolutePath: 3 теста (абсолютный путь, директория data/, создание директории)
+  - TestThreadLocal: 2 теста (разные connections в разных потоках, переиспользование в одном потоке)
+  - TestLockPresence: 4 теста (наличие Lock, thread-local storage, отсутствие check_same_thread=False, WAL mode)
+  - TestBasicOperations: 2 теста (базовые save/find, concurrent access без crashes)
+- `tests/test_t08_gallery_optimization.py`: переписаны тесты (helper функция `create_test_db`)
+- Всего: 89 тестов (78 + 11), все прошли
+
 ---
 
 ## Метрики (baseline)
@@ -130,13 +149,16 @@
 | Метрика | Текущее |
 |---------|---------|
 | Файлов Python | 12 |
-| Строк кода | ~880 (было ~862) |
+| Строк кода | ~890 (было ~862) |
 | Функций с type hints | 25+/33 (~76%) |
 | Магических чисел | 0 (было 20+, устранены в T-02) |
 | `print()` вызовов | ~6 (только утилиты CLI: setup_supabase.py, check_imports.py, seed_test_data.py) |
 | Критических багов | 0 (было 2, исправлены в T-01) |
 | Дублирующихся файлов | 0 (было 1, удалён в T-01) |
-| Тестов | 78 (было 42; +22 в T-07, +7 в T-08, +8 в T-09) |
+| Тестов | 89 (было 42; +22 в T-07, +7 в T-08, +8 в T-09, +11 в T-10) |
 | Производительность поиска | <50ms для 100 embeddings (было O(n) с pickle) |
 | Пиннованные версии | 120+ (было 12 без версий, зафиксировано в T-09) |
 | Воспроизводимость сборки | ✅ (requirements.txt с exact versions) |
+| Thread-safety SQLite | ✅ (thread-local connections + RLock + WAL) |
+| SQLite путь | ✅ (абсолютный: data/embeddings.db) |
+| Завершённые задачи | 10/10 (T-01 до T-10, 100%) |

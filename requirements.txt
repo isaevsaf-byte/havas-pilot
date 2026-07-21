@@ -17,9 +17,9 @@ storage3==2.30.0
 realtime==2.30.0
 
 # === UI: Web Dashboard ===
-streamlit==1.28.1
-plotly==5.17.0
-pandas==2.2.0
+streamlit>=1.28.0
+plotly>=5.17.0
+pandas>=2.0.0
 
 # === UTILITIES: Support & Logging ===
 gdown==6.0.0

@@ -1,12 +1,12 @@
 # === CORE: ML/Vision Models ===
-torch==2.12.0
-torchvision==0.27.0
-ultralytics==8.4.52
-supervision==0.28.0
-opencv-python==4.13.0.92
+torch==2.0.1
+torchvision==0.15.2
+ultralytics==8.0.200
+supervision==0.16.0
+opencv-python==4.8.1.78
 torchreid==0.2.5
-numpy==2.4.0
-scipy==1.17.0
+numpy==1.24.3
+scipy==1.11.4
 
 # === CLOUD: Supabase Backend ===
 supabase==2.30.0

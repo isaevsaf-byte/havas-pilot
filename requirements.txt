@@ -1,6 +1,6 @@
 # === CORE: ML/Vision Models ===
 torch==2.13.0
-torchvision==0.18.0
+torchvision==0.28.0
 ultralytics==8.4.52
 supervision==0.28.0
 opencv-python==4.13.0.92

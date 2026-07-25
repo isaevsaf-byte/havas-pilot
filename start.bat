@@ -10,7 +10,7 @@ REM Установить переменные окружения
 set HEADLESS=1
 set SUPABASE_URL=
 set SUPABASE_KEY=
-set CAMERA_URL=rtsp://admin:admin@192.168.1.64:554/stream1
+set CAMERA_URL=rtsp://Division:ZAQwsx147!@173.30.11.254:8083/Streaming/Channels/2401
 set STORE_NAME=havas_tashkent
 
 REM Запустить скрипт

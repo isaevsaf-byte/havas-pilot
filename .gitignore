@@ -4,3 +4,4 @@ __pycache__/
 *.pt
 *.db
 *.mp4
+logs/

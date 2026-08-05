@@ -2,10 +2,13 @@ import sys
 import os
 import time
 from datetime import datetime, timezone, timedelta
+from zoneinfo import ZoneInfo
 
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+
+TASHKENT_TZ = ZoneInfo("Asia/Tashkent")
 
 for key in ("SUPABASE_URL", "SUPABASE_KEY"):
     if key in st.secrets:
@@ -55,7 +58,7 @@ def fetch_visits(days=None):
     if not result.data:
         return pd.DataFrame(columns=["timestamp", "direction", "is_repeat", "visitor_id"])
     df = pd.DataFrame(result.data)
-    df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True)
+    df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True).dt.tz_convert(TASHKENT_TZ)
     return df
 
 
@@ -66,10 +69,11 @@ if heartbeat is None:
 else:
     last_seen = pd.to_datetime(heartbeat["last_seen"], utc=True)
     age = datetime.now(timezone.utc) - last_seen
+    last_seen_local = last_seen.tz_convert(TASHKENT_TZ)
     if age < timedelta(minutes=10):
         st.success("🟢 Система работает")
     else:
-        st.error(f"🔴 Система не отвечает — последний сигнал: {last_seen.strftime('%d.%m.%Y %H:%M')}")
+        st.error(f"🔴 Система не отвечает — последний сигнал: {last_seen_local.strftime('%d.%m.%Y %H:%M')}")
 
 st.divider()
 
@@ -77,7 +81,7 @@ st.divider()
 df_all = fetch_visits()
 df_30 = fetch_visits(days=30)
 
-today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+today_str = datetime.now(TASHKENT_TZ).strftime("%Y-%m-%d")
 if not df_all.empty:
     df_today = df_all[
         (df_all["direction"] == "IN") &
@@ -85,7 +89,7 @@ if not df_all.empty:
     ]
     df_7d = df_all[
         (df_all["direction"] == "IN") &
-        (df_all["timestamp"] >= datetime.now(timezone.utc) - timedelta(days=7))
+        (df_all["timestamp"] >= datetime.now(TASHKENT_TZ) - timedelta(days=7))
     ]
     total_in = df_all[df_all["direction"] == "IN"]
 else:

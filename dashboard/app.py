@@ -106,14 +106,22 @@ st.divider()
 col_left, col_right = st.columns(2)
 
 with col_left:
-    st.subheader("Входы по часам сегодня")
-    if not df_all.empty:
-        df_today_in = df_all[
-            (df_all["direction"] == "IN") &
-            (df_all["timestamp"].dt.date == pd.Timestamp(today_str).date())
+    day_choice = st.radio(
+        "День", ["Сегодня", "Вчера"], horizontal=True, label_visibility="collapsed"
+    )
+    selected_date = (
+        pd.Timestamp(today_str).date()
+        if day_choice == "Сегодня"
+        else pd.Timestamp(today_str).date() - timedelta(days=1)
+    )
+    st.subheader(f"Входы по часам ({day_choice.lower()})")
+    if not df_30.empty:
+        df_day_in = df_30[
+            (df_30["direction"] == "IN") &
+            (df_30["timestamp"].dt.date == selected_date)
         ].copy()
-        df_today_in["hour"] = df_today_in["timestamp"].dt.hour
-        hourly = df_today_in.groupby("hour").size().reset_index(name="count")
+        df_day_in["hour"] = df_day_in["timestamp"].dt.hour
+        hourly = df_day_in.groupby("hour").size().reset_index(name="count")
         all_hours = pd.DataFrame({"hour": range(24)})
         hourly = all_hours.merge(hourly, on="hour", how="left").fillna(0)
         fig = px.bar(hourly, x="hour", y="count",
@@ -121,7 +129,7 @@ with col_left:
                      color_discrete_sequence=["#1f77b4"])
         st.plotly_chart(fig, use_container_width=True)
     else:
-        st.info("Нет данных за сегодня")
+        st.info(f"Нет данных за {day_choice.lower()}")
 
 with col_right:
     st.subheader("Входы по дням за 30 дней")

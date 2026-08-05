@@ -62,7 +62,12 @@ def fetch_visits(since_local=None, until_local=None):
         q = q.lte("timestamp", until_local.astimezone(timezone.utc).isoformat())
     result = q.execute()
     if not result.data:
-        return pd.DataFrame(columns=["timestamp", "direction", "is_repeat", "visitor_id"])
+        return pd.DataFrame({
+            "timestamp": pd.Series(dtype="datetime64[ns, UTC]"),
+            "direction": pd.Series(dtype="object"),
+            "is_repeat": pd.Series(dtype="bool"),
+            "visitor_id": pd.Series(dtype="object"),
+        })
     df = pd.DataFrame(result.data)
     df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True).dt.tz_convert(TASHKENT_TZ)
     return df

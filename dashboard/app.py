@@ -268,7 +268,7 @@ if not df_30.empty:
     pivot = heat.pivot(index="weekday", columns="hour", values="count").reindex(weekday_order).fillna(0)
     pivot.index = [weekday_ru[d] for d in pivot.index]
     fig_heat = px.imshow(pivot, labels=dict(x="Час", y="День недели", color="Входов"),
-                          color_continuous_scale="Blues", aspect="auto")
+                          color_continuous_scale="RdYlGn_r", aspect="auto")
     st.plotly_chart(fig_heat, use_container_width=True)
 else:
     st.info("Нет данных за последние 30 дней")

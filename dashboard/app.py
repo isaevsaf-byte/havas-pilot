@@ -1,7 +1,7 @@
 import sys
 import os
 import time
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone, timedelta, date
 from zoneinfo import ZoneInfo
 
 import streamlit as st
@@ -44,22 +44,59 @@ def fetch_heartbeat():
         return None
 
 
-def fetch_visits(days=None):
+def fetch_visits(since_local=None, until_local=None):
+    """Fetch visits between two Tashkent-local datetimes.
+
+    Supabase stores timestamps in UTC, so the local bounds are converted
+    to UTC only for the query — everything downstream works in Tashkent time.
+    """
     q = (
         client.table("visits")
         .select("timestamp, direction, is_repeat, visitor_id")
         .eq("store", config.STORE_NAME)
         .order("timestamp", desc=True)
     )
-    if days is not None:
-        since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
-        q = q.gte("timestamp", since)
+    if since_local is not None:
+        q = q.gte("timestamp", since_local.astimezone(timezone.utc).isoformat())
+    if until_local is not None:
+        q = q.lte("timestamp", until_local.astimezone(timezone.utc).isoformat())
     result = q.execute()
     if not result.data:
         return pd.DataFrame(columns=["timestamp", "direction", "is_repeat", "visitor_id"])
     df = pd.DataFrame(result.data)
     df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True).dt.tz_convert(TASHKENT_TZ)
     return df
+
+
+def day_bounds(d: date):
+    """Midnight-to-midnight bounds for a given local calendar date."""
+    start = datetime.combine(d, datetime.min.time(), tzinfo=TASHKENT_TZ)
+    end = start + timedelta(days=1) - timedelta(microseconds=1)
+    return start, end
+
+
+def compute_dwell_times(df: pd.DataFrame) -> pd.DataFrame:
+    """Pair each IN with the next OUT for the same visitor_id to get session durations.
+
+    Sessions longer than 4h are dropped as likely mismatched pairs (e.g. a
+    missed detection leaving an IN or OUT unmatched).
+    """
+    sessions = []
+    for visitor_id, group in df.sort_values("timestamp").groupby("visitor_id"):
+        pending_in = None
+        for _, row in group.iterrows():
+            if row["direction"] == "IN":
+                pending_in = row
+            elif row["direction"] == "OUT" and pending_in is not None:
+                duration_min = (row["timestamp"] - pending_in["timestamp"]).total_seconds() / 60
+                if 0 < duration_min < 240:
+                    sessions.append({
+                        "visitor_id": visitor_id,
+                        "is_repeat": bool(pending_in["is_repeat"]),
+                        "duration_min": duration_min,
+                    })
+                pending_in = None
+    return pd.DataFrame(sessions)
 
 
 # --- Status bar ---
@@ -77,51 +114,77 @@ else:
 
 st.divider()
 
-# --- KPI metrics ---
-df_all = fetch_visits()
-df_30 = fetch_visits(days=30)
+# --- Period selector (drives everything below except the 30-day heatmap/trend) ---
+today_local = datetime.now(TASHKENT_TZ).date()
 
-today_str = datetime.now(TASHKENT_TZ).strftime("%Y-%m-%d")
-if not df_all.empty:
-    df_today = df_all[
-        (df_all["direction"] == "IN") &
-        (df_all["timestamp"].dt.date == pd.Timestamp(today_str).date())
-    ]
-    df_7d = df_all[
-        (df_all["direction"] == "IN") &
-        (df_all["timestamp"] >= datetime.now(TASHKENT_TZ) - timedelta(days=7))
-    ]
-    total_in = df_all[df_all["direction"] == "IN"]
+period_choice = st.radio(
+    "Период", ["Сегодня", "Вчера", "Неделя", "Месяц", "Свой период"],
+    horizontal=True,
+)
+
+if period_choice == "Сегодня":
+    period_start, period_end = day_bounds(today_local)
+    hourly_mode = True
+elif period_choice == "Вчера":
+    period_start, period_end = day_bounds(today_local - timedelta(days=1))
+    hourly_mode = True
+elif period_choice == "Неделя":
+    period_start, _ = day_bounds(today_local - timedelta(days=6))
+    period_end = datetime.now(TASHKENT_TZ)
+    hourly_mode = False
+elif period_choice == "Месяц":
+    period_start, _ = day_bounds(today_local - timedelta(days=29))
+    period_end = datetime.now(TASHKENT_TZ)
+    hourly_mode = False
 else:
-    df_today = df_7d = total_in = pd.DataFrame()
+    picked = st.date_input(
+        "Диапазон дат",
+        value=(today_local - timedelta(days=6), today_local),
+        max_value=today_local,
+    )
+    if isinstance(picked, tuple) and len(picked) == 2:
+        period_start, _ = day_bounds(picked[0])
+        _, period_end = day_bounds(picked[1])
+    else:
+        period_start, period_end = day_bounds(today_local)
+    hourly_mode = period_start.date() == period_end.date()
 
-col1, col2, col3 = st.columns(3)
-col1.metric("Сегодня (входов)", len(df_today))
-col2.metric("За 7 дней", len(df_7d))
-col3.metric("Всего за всё время", len(total_in))
+df_period = fetch_visits(period_start, period_end)
+df_in = df_period[df_period["direction"] == "IN"]
+
+# A fixed 30-day window, independent of the period selector, for the
+# heatmap and retention trend — those need a stable amount of history.
+df_30 = fetch_visits(datetime.now(TASHKENT_TZ) - timedelta(days=30), datetime.now(TASHKENT_TZ))
 
 st.divider()
 
-# --- Charts ---
+# --- KPI metrics ---
+total_in = len(df_in)
+new_count = int((~df_in["is_repeat"]).sum()) if total_in else 0
+repeat_count = int(df_in["is_repeat"].sum()) if total_in else 0
+new_pct = (new_count / total_in * 100) if total_in else 0
+repeat_pct = (repeat_count / total_in * 100) if total_in else 0
+
+dwell = compute_dwell_times(df_period)
+avg_dwell = dwell["duration_min"].mean() if not dwell.empty else None
+
+col1, col2, col3, col4 = st.columns(4)
+col1.metric(f"Входов ({period_choice.lower()})", total_in)
+col2.metric("Новые", f"{new_count} ({new_pct:.0f}%)")
+col3.metric("Повторные", f"{repeat_count} ({repeat_pct:.0f}%)")
+col4.metric("Среднее время в магазине", f"{avg_dwell:.0f} мин" if avg_dwell else "—")
+
+st.divider()
+
+# --- Charts row 1: time breakdown + new vs repeat ---
 col_left, col_right = st.columns(2)
 
 with col_left:
-    day_choice = st.radio(
-        "День", ["Сегодня", "Вчера"], horizontal=True, label_visibility="collapsed"
-    )
-    selected_date = (
-        pd.Timestamp(today_str).date()
-        if day_choice == "Сегодня"
-        else pd.Timestamp(today_str).date() - timedelta(days=1)
-    )
-    st.subheader(f"Входы по часам ({day_choice.lower()})")
-    if not df_30.empty:
-        df_day_in = df_30[
-            (df_30["direction"] == "IN") &
-            (df_30["timestamp"].dt.date == selected_date)
-        ].copy()
-        df_day_in["hour"] = df_day_in["timestamp"].dt.hour
-        hourly = df_day_in.groupby("hour").size().reset_index(name="count")
+    if hourly_mode:
+        st.subheader("Входы по часам")
+        df_hourly = df_in.copy()
+        df_hourly["hour"] = df_hourly["timestamp"].dt.hour
+        hourly = df_hourly.groupby("hour").size().reset_index(name="count")
         all_hours = pd.DataFrame({"hour": range(24)})
         hourly = all_hours.merge(hourly, on="hour", how="left").fillna(0)
         fig = px.bar(hourly, x="hour", y="count",
@@ -129,50 +192,101 @@ with col_left:
                      color_discrete_sequence=["#1f77b4"])
         st.plotly_chart(fig, use_container_width=True)
     else:
-        st.info(f"Нет данных за {day_choice.lower()}")
+        st.subheader("Входы по дням")
+        df_daily = df_in.copy()
+        df_daily["date"] = df_daily["timestamp"].dt.date
+        daily = df_daily.groupby("date").size().reset_index(name="count")
+        fig = px.bar(daily, x="date", y="count",
+                     labels={"date": "Дата", "count": "Входов"},
+                     color_discrete_sequence=["#1f77b4"])
+        st.plotly_chart(fig, use_container_width=True)
+    if df_in.empty:
+        st.info("Нет данных за этот период")
 
 with col_right:
-    st.subheader("Входы по дням за 30 дней")
+    st.subheader("Новые vs Повторные")
+    if total_in:
+        pie_data = df_in["is_repeat"].map({False: "Новые", True: "Повторные"}).value_counts().reset_index()
+        pie_data.columns = ["Тип", "Количество"]
+        fig_pie = px.pie(pie_data, names="Тип", values="Количество",
+                          color="Тип",
+                          color_discrete_map={"Новые": "#1f77b4", "Повторные": "#ff7f0e"})
+        st.plotly_chart(fig_pie, use_container_width=True)
+    else:
+        st.info("Нет данных за этот период")
+
+# --- Charts row 2: dwell time comparison + retention trend ---
+col_left2, col_right2 = st.columns(2)
+
+with col_left2:
+    st.subheader("Время в магазине: новые vs повторные")
+    if not dwell.empty:
+        dwell_avg = dwell.groupby("is_repeat")["duration_min"].mean().reset_index()
+        dwell_avg["Тип"] = dwell_avg["is_repeat"].map({False: "Новые", True: "Повторные"})
+        fig_dwell = px.bar(dwell_avg, x="Тип", y="duration_min",
+                            labels={"duration_min": "Минут в среднем"},
+                            color="Тип",
+                            color_discrete_map={"Новые": "#1f77b4", "Повторные": "#ff7f0e"})
+        st.plotly_chart(fig_dwell, use_container_width=True)
+    else:
+        st.info("Недостаточно завершённых визитов (нужна пара IN+OUT) за этот период")
+
+with col_right2:
+    st.subheader("Доля повторных по неделям (30 дней)")
     if not df_30.empty:
         df_30_in = df_30[df_30["direction"] == "IN"].copy()
-        df_30_in["date"] = df_30_in["timestamp"].dt.date
-        daily = df_30_in.groupby("date").size().reset_index(name="count")
-        fig2 = px.line(daily, x="date", y="count",
-                       labels={"date": "Дата", "count": "Входов"},
-                       markers=True,
-                       color_discrete_sequence=["#2ca02c"])
-        st.plotly_chart(fig2, use_container_width=True)
+        df_30_in["week"] = df_30_in["timestamp"].dt.strftime("%Y-W%U")
+        weekly = df_30_in.groupby("week")["is_repeat"].mean().reset_index()
+        weekly["repeat_pct"] = weekly["is_repeat"] * 100
+        fig_trend = px.line(weekly, x="week", y="repeat_pct",
+                             labels={"week": "Неделя", "repeat_pct": "% повторных"},
+                             markers=True,
+                             color_discrete_sequence=["#2ca02c"])
+        st.plotly_chart(fig_trend, use_container_width=True)
     else:
         st.info("Нет данных за последние 30 дней")
 
-# --- Pie chart ---
-st.subheader("Новые vs Повторные (30 дней)")
+st.divider()
+
+# --- Heatmap: day of week x hour, fixed 30-day window ---
+st.subheader("Тепловая карта загруженности (последние 30 дней)")
 if not df_30.empty:
-    df_30_in = df_30[df_30["direction"] == "IN"]
-    pie_data = df_30_in["is_repeat"].map({False: "Новые", True: "Повторные"}).value_counts().reset_index()
-    pie_data.columns = ["Тип", "Количество"]
-    fig3 = px.pie(pie_data, names="Тип", values="Количество",
-                  color_discrete_sequence=["#1f77b4", "#ff7f0e"])
-    st.plotly_chart(fig3, use_container_width=True)
+    df_hm = df_30[df_30["direction"] == "IN"].copy()
+    df_hm["weekday"] = df_hm["timestamp"].dt.day_name()
+    df_hm["hour"] = df_hm["timestamp"].dt.hour
+    weekday_order = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    weekday_ru = {
+        "Monday": "Пн", "Tuesday": "Вт", "Wednesday": "Ср", "Thursday": "Чт",
+        "Friday": "Пт", "Saturday": "Сб", "Sunday": "Вс",
+    }
+    heat = df_hm.groupby(["weekday", "hour"]).size().reset_index(name="count")
+    pivot = heat.pivot(index="weekday", columns="hour", values="count").reindex(weekday_order).fillna(0)
+    pivot.index = [weekday_ru[d] for d in pivot.index]
+    fig_heat = px.imshow(pivot, labels=dict(x="Час", y="День недели", color="Входов"),
+                          color_continuous_scale="Blues", aspect="auto")
+    st.plotly_chart(fig_heat, use_container_width=True)
 else:
     st.info("Нет данных за последние 30 дней")
 
 st.divider()
 
-# --- Last 20 events table ---
-st.subheader("Последние 20 событий")
-if not df_all.empty:
-    recent = df_all.head(20).copy()
-    recent["Время"] = recent["timestamp"].dt.strftime("%d.%m.%Y %H:%M:%S")
-    recent["Направление"] = recent["direction"]
-    recent["Тип"] = recent["is_repeat"].map({False: "Новый", True: "Повторный"})
-    st.dataframe(
-        recent[["Время", "Направление", "Тип"]],
-        use_container_width=True,
-        hide_index=True,
+# --- Events table + export ---
+st.subheader(f"События ({period_choice.lower()})")
+if not df_period.empty:
+    table = df_period.copy()
+    table["Время"] = table["timestamp"].dt.strftime("%d.%m.%Y %H:%M:%S")
+    table["Направление"] = table["direction"]
+    table["Тип"] = table["is_repeat"].map({False: "Новый", True: "Повторный"})
+    display_cols = table[["Время", "Направление", "Тип"]].head(50)
+    st.dataframe(display_cols, use_container_width=True, hide_index=True)
+
+    csv_bytes = table[["Время", "Направление", "Тип", "visitor_id"]].to_csv(index=False).encode("utf-8")
+    st.download_button(
+        "Скачать CSV за период", data=csv_bytes,
+        file_name=f"havas_visits_{period_choice}.csv", mime="text/csv",
     )
 else:
-    st.info("Событий пока нет")
+    st.info("Событий за этот период пока нет")
 
 # --- Auto-refresh ---
 time.sleep(config.DASHBOARD_REFRESH_SEC)

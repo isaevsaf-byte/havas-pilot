@@ -7,6 +7,10 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 
+for key in ("SUPABASE_URL", "SUPABASE_KEY"):
+    if key in st.secrets:
+        os.environ[key] = st.secrets[key]
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import config
 

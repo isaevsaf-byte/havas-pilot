@@ -267,8 +267,11 @@ if not df_30.empty:
     heat = df_hm.groupby(["weekday", "hour"]).size().reset_index(name="count")
     pivot = heat.pivot(index="weekday", columns="hour", values="count").reindex(weekday_order).fillna(0)
     pivot.index = [weekday_ru[d] for d in pivot.index]
+    pivot = pivot.loc[:, (pivot != 0).any(axis=0)]  # drop hours with zero visits across all days (e.g. store closed)
     fig_heat = px.imshow(pivot, labels=dict(x="Час", y="День недели", color="Входов"),
-                          color_continuous_scale="RdYlGn_r", aspect="auto")
+                          color_continuous_scale="RdYlGn_r", aspect="auto",
+                          text_auto=True)
+    fig_heat.update_layout(height=400)
     st.plotly_chart(fig_heat, use_container_width=True)
 else:
     st.info("Нет данных за последние 30 дней")

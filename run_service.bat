@@ -21,5 +21,5 @@ if not exist logs mkdir logs
 echo [%date% %time%] Запуск main.py >> logs\service.log
 python main.py >> logs\service.log 2>&1
 echo [%date% %time%] main.py остановился, перезапуск через 10 сек >> logs\service.log
-timeout /t 10 /nobreak
+ping -n 11 127.0.0.1 >nul
 goto loop

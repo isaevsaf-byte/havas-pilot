@@ -219,25 +219,29 @@ col_left, col_right = st.columns(2)
 
 with col_left:
     if hourly_mode:
-        st.subheader("Входы по часам")
+        st.subheader("Входы по часам (новые / повторные)")
         df_hourly = df_in.copy()
         df_hourly["hour"] = df_hourly["timestamp"].dt.hour
-        hourly = df_hourly.groupby("hour").size().reset_index(name="count")
-        all_hours = pd.DataFrame({"hour": WORK_HOURS})
-        hourly = all_hours.merge(hourly, on="hour", how="left").fillna(0)
-        fig = px.bar(hourly, x="hour", y="count",
+        df_hourly["Тип"] = df_hourly["is_repeat"].map({False: "Новые", True: "Повторные"})
+        hourly = df_hourly.groupby(["hour", "Тип"]).size().reset_index(name="count")
+        all_combos = pd.MultiIndex.from_product(
+            [WORK_HOURS, ["Новые", "Повторные"]], names=["hour", "Тип"]
+        ).to_frame(index=False)
+        hourly = all_combos.merge(hourly, on=["hour", "Тип"], how="left").fillna(0)
+        fig = px.bar(hourly, x="hour", y="count", color="Тип",
                      labels={"hour": "Час", "count": "Входов"},
-                     color_discrete_sequence=["#1f77b4"])
+                     color_discrete_map={"Новые": "#1f77b4", "Повторные": "#ff7f0e"})
         fig.update_xaxes(dtick=1)
         st.plotly_chart(fig, use_container_width=True)
     else:
-        st.subheader("Входы по дням")
+        st.subheader("Входы по дням (новые / повторные)")
         df_daily = df_in.copy()
         df_daily["date"] = df_daily["timestamp"].dt.date
-        daily = df_daily.groupby("date").size().reset_index(name="count")
-        fig = px.bar(daily, x="date", y="count",
+        df_daily["Тип"] = df_daily["is_repeat"].map({False: "Новые", True: "Повторные"})
+        daily = df_daily.groupby(["date", "Тип"]).size().reset_index(name="count")
+        fig = px.bar(daily, x="date", y="count", color="Тип",
                      labels={"date": "Дата", "count": "Входов"},
-                     color_discrete_sequence=["#1f77b4"])
+                     color_discrete_map={"Новые": "#1f77b4", "Повторные": "#ff7f0e"})
         st.plotly_chart(fig, use_container_width=True)
     if df_in.empty:
         st.info("Нет данных за этот период")

@@ -271,9 +271,10 @@ if not df_30.empty:
     pivot = pivot.loc[:, (pivot != 0).any(axis=0)]  # drop hours with zero visits across all days
     pivot = pivot.loc[(pivot != 0).any(axis=1), :]  # drop days with zero visits across all hours
     pivot_display = pivot.replace(0, np.nan)  # blank cells instead of solid green for zero
+    smooth_scale = [(0.0, "#2ca02c"), (0.5, "#ffeb3b"), (1.0, "#d32f2f")]
     fig_heat = px.imshow(pivot_display, labels=dict(x="Час", y="День недели", color="Входов"),
-                          color_continuous_scale="RdYlGn_r", aspect="auto",
-                          text_auto=True)
+                          color_continuous_scale=smooth_scale, range_color=(0, pivot.values.max()),
+                          aspect="auto", text_auto=True)
     fig_heat.update_layout(height=400, plot_bgcolor="rgba(0,0,0,0)")
     st.plotly_chart(fig_heat, use_container_width=True)
 else:

@@ -10,7 +10,7 @@ import numpy as np
 import plotly.express as px
 
 TASHKENT_TZ = ZoneInfo("Asia/Tashkent")
-WORK_HOURS = list(range(8, 22))  # 08:00–21:59, store operating hours
+WORK_HOURS = list(range(8, 23))  # 08:00–22:59, store operating hours
 
 for key in ("SUPABASE_URL", "SUPABASE_KEY"):
     if key in st.secrets:

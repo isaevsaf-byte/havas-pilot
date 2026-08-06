@@ -324,6 +324,27 @@ else:
 
 st.divider()
 
+# --- Weekly pattern: total traffic per weekday, fixed 30-day window ---
+st.subheader("Трафик по дням недели (последние 30 дней)")
+if not df_30.empty:
+    df_wd = df_30[df_30["direction"] == "IN"].copy()
+    df_wd["weekday"] = df_wd["timestamp"].dt.day_name()
+    weekday_totals = (
+        df_wd.groupby("weekday").size()
+        .reindex(weekday_order).fillna(0).reset_index(name="count")
+    )
+    weekday_totals["День"] = weekday_totals["weekday"].map(weekday_ru)
+    fig_weekday = px.area(weekday_totals, x="День", y="count",
+                           labels={"count": "Входов"},
+                           markers=True, line_shape="spline",
+                           color_discrete_sequence=["#1f77b4"])
+    fig_weekday.update_traces(fillcolor="rgba(31,119,180,0.15)")
+    st.plotly_chart(fig_weekday, use_container_width=True)
+else:
+    st.info("Нет данных за последние 30 дней")
+
+st.divider()
+
 # --- Live feed + export ---
 st.subheader(f"Живая лента ({period_choice.lower()})")
 if not df_period.empty:

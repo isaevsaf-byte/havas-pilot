@@ -196,6 +196,7 @@ with col_left:
         fig = px.bar(hourly, x="hour", y="count",
                      labels={"hour": "Час", "count": "Входов"},
                      color_discrete_sequence=["#1f77b4"])
+        fig.update_xaxes(dtick=1)
         st.plotly_chart(fig, use_container_width=True)
     else:
         st.subheader("Входы по дням")

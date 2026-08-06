@@ -10,6 +10,7 @@ import numpy as np
 import plotly.express as px
 
 TASHKENT_TZ = ZoneInfo("Asia/Tashkent")
+WORK_HOURS = list(range(8, 22))  # 08:00–21:59, store operating hours
 
 for key in ("SUPABASE_URL", "SUPABASE_KEY"):
     if key in st.secrets:
@@ -81,11 +82,14 @@ def day_bounds(d: date):
     return start, end
 
 
+MAX_VISIT_MINUTES = 90  # sessions longer than this are treated as mismatched IN/OUT pairs, not real visits
+
+
 def compute_dwell_times(df: pd.DataFrame) -> pd.DataFrame:
     """Pair each IN with the next OUT for the same visitor_id to get session durations.
 
-    Sessions longer than 4h are dropped as likely mismatched pairs (e.g. a
-    missed detection leaving an IN or OUT unmatched).
+    Sessions longer than MAX_VISIT_MINUTES are dropped as likely mismatched
+    pairs (e.g. a missed detection leaving an IN or OUT unmatched).
     """
     sessions = []
     for visitor_id, group in df.sort_values("timestamp").groupby("visitor_id"):
@@ -95,7 +99,7 @@ def compute_dwell_times(df: pd.DataFrame) -> pd.DataFrame:
                 pending_in = row
             elif row["direction"] == "OUT" and pending_in is not None:
                 duration_min = (row["timestamp"] - pending_in["timestamp"]).total_seconds() / 60
-                if 0 < duration_min < 240:
+                if 0 < duration_min < MAX_VISIT_MINUTES:
                     sessions.append({
                         "visitor_id": visitor_id,
                         "is_repeat": bool(pending_in["is_repeat"]),
@@ -173,12 +177,16 @@ repeat_pct = (repeat_count / total_in * 100) if total_in else 0
 
 dwell = compute_dwell_times(df_period)
 avg_dwell = dwell["duration_min"].mean() if not dwell.empty else None
+median_dwell = dwell["duration_min"].median() if not dwell.empty else None
 
 col1, col2, col3, col4 = st.columns(4)
 col1.metric(f"Входов ({period_choice.lower()})", total_in)
 col2.metric("Новые", f"{new_count} ({new_pct:.0f}%)")
 col3.metric("Повторные", f"{repeat_count} ({repeat_pct:.0f}%)")
-col4.metric("Среднее время в магазине", f"{avg_dwell:.0f} мин" if avg_dwell else "—")
+col4.metric(
+    "Время в магазине (медиана / среднее)",
+    f"{median_dwell:.0f} / {avg_dwell:.0f} мин" if avg_dwell else "—",
+)
 
 st.divider()
 
@@ -191,7 +199,7 @@ with col_left:
         df_hourly = df_in.copy()
         df_hourly["hour"] = df_hourly["timestamp"].dt.hour
         hourly = df_hourly.groupby("hour").size().reset_index(name="count")
-        all_hours = pd.DataFrame({"hour": range(24)})
+        all_hours = pd.DataFrame({"hour": WORK_HOURS})
         hourly = all_hours.merge(hourly, on="hour", how="left").fillna(0)
         fig = px.bar(hourly, x="hour", y="count",
                      labels={"hour": "Час", "count": "Входов"},
@@ -267,9 +275,10 @@ if not df_30.empty:
         "Friday": "Пт", "Saturday": "Сб", "Sunday": "Вс",
     }
     heat = df_hm.groupby(["weekday", "hour"]).size().reset_index(name="count")
-    pivot = heat.pivot(index="weekday", columns="hour", values="count").reindex(weekday_order).fillna(0)
+    pivot = heat.pivot(index="weekday", columns="hour", values="count").reindex(
+        index=weekday_order, columns=WORK_HOURS
+    ).fillna(0)
     pivot.index = [weekday_ru[d] for d in pivot.index]
-    pivot = pivot.loc[:, (pivot != 0).any(axis=0)]  # drop hours with zero visits across all days
     pivot = pivot.loc[(pivot != 0).any(axis=1), :]  # drop days with zero visits across all hours
     pivot_display = pivot.replace(0, np.nan)  # blank cells instead of solid green for zero
     smooth_scale = [(0.0, "#2ca02c"), (0.5, "#ffeb3b"), (1.0, "#d32f2f")]

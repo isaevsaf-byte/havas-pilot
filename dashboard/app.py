@@ -282,11 +282,14 @@ with col_right2:
         df_30_in["week"] = df_30_in["timestamp"].dt.strftime("%Y-W%U")
         weekly = df_30_in.groupby("week")["is_repeat"].mean().reset_index()
         weekly["repeat_pct"] = weekly["is_repeat"] * 100
-        fig_trend = px.line(weekly, x="week", y="repeat_pct",
-                             labels={"week": "Неделя", "repeat_pct": "% повторных"},
-                             markers=True,
-                             color_discrete_sequence=["#2ca02c"])
-        st.plotly_chart(fig_trend, use_container_width=True)
+        if len(weekly) < 2:
+            st.info("Пока только одна неделя данных — тренд появится, когда накопится история за несколько недель")
+        else:
+            fig_trend = px.line(weekly, x="week", y="repeat_pct",
+                                 labels={"week": "Неделя", "repeat_pct": "% повторных"},
+                                 markers=True,
+                                 color_discrete_sequence=["#2ca02c"])
+            st.plotly_chart(fig_trend, use_container_width=True)
     else:
         st.info("Нет данных за последние 30 дней")
 

@@ -159,6 +159,30 @@ class TestCheckVisitors:
 
         assert event_queue.empty()
 
+    def test_cooldown_not_consumed_when_reid_returns_none(self):
+        """A failed ReID crop must not burn the cooldown window.
+
+        Regression test: should_count() used to fire before reid.check(),
+        so a bad crop (too small, occluded) silently ate the cooldown with
+        no event logged — a real crossing moments later would then be
+        skipped too. Cooldown must only start once a visit is confirmed.
+        """
+        reid = Mock()
+        state = PipelineState()
+        frame = np.zeros((480, 640, 3), dtype=np.uint8)
+        event_queue = queue.Queue()
+
+        tracks = [{"track_id": 1, "bbox": [10, 100, 30, 200]}]  # cy=150, matches line_y below
+
+        reid.check.return_value = None
+        check_visitors(tracks, frame, reid, state, 150, event_queue)
+        assert event_queue.empty()
+
+        reid.check.return_value = {"status": "new", "visitor_id": "abc123", "similarity": 0.0}
+        check_visitors(tracks, frame, reid, state, 150, event_queue)
+
+        assert not event_queue.empty()
+
     def test_result_colors_by_status(self):
         """check_visitors() sets color based on reid status (new/repeat)."""
         reid = Mock()

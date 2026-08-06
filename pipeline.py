@@ -68,11 +68,12 @@ def check_visitors(
         label = ""
         reid_result = None
 
-        if abs(cy - line_y) < config.LINE_TOLERANCE_PX and state.should_count(track_id):
+        if abs(cy - line_y) < config.LINE_TOLERANCE_PX and not state.is_in_cooldown(track_id):
             crop = frame[y1:y2, x1:x2]
             reid_result = reid.check(crop, track_id)
 
             if reid_result is not None:
+                state.mark_counted(track_id)
                 direction = state.get_direction(track_id, cy)
                 event_queue.put(("visit", {
                     "timestamp": datetime.now(timezone.utc).isoformat(),

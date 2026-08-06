@@ -101,14 +101,14 @@ class LocalDB:
 
         self._cache.clear()
         for visitor_id, blob in rows:
-            if self._embedding_dim is None:
-                # Infer dimension from first blob
-                self._embedding_dim = len(blob) // 4  # float32 = 4 bytes
-            embedding = np.frombuffer(blob, dtype=np.float32, count=self._embedding_dim)
-            self._cache[visitor_id] = embedding
+            # Infer dimension per row instead of trusting a single shared
+            # counter — a leftover row from a different model/embedding
+            # size would otherwise be truncated or padded with garbage.
+            dim = len(blob) // 4  # float32 = 4 bytes
+            self._cache[visitor_id] = np.frombuffer(blob, dtype=np.float32, count=dim)
 
         self._cache_built_at = datetime.now(timezone.utc)
-        logger.debug(f"Built cache with {len(self._cache)} embeddings (dim={self._embedding_dim})")
+        logger.debug(f"Built cache with {len(self._cache)} embeddings")
 
     def _is_cache_valid(self) -> bool:
         if self._cache_built_at is None:

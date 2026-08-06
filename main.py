@@ -35,6 +35,13 @@ def connect_camera() -> cv2.VideoCapture:
 def cloud_sender(cloud_db: CloudDB) -> None:
     # Network I/O lives here so a slow Supabase call never stalls
     # the video loop. Events wait in the queue until they are delivered.
+    #
+    # A failed event is requeued behind whatever arrived in the meantime
+    # rather than retried in place — insertion order can shuffle, but a
+    # permanently failing event (e.g. blocked by an RLS policy) can't
+    # starve later events, including heartbeats the dashboard depends on
+    # for its "система работает" status. Downstream consumers should sort
+    # by the event's own timestamp, not by arrival order.
     while True:
         kind, payload = event_queue.get()
         try:
@@ -66,7 +73,6 @@ def main() -> None:
         ret, frame = cap.read()
         if not ret:
             logger.warning("Кадр не получен, переподключаюсь...")
-            time.sleep(config.CAMERA_RECONNECT_DELAY_SEC)
             cap.release()
             cap = connect_camera()
             continue

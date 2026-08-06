@@ -22,6 +22,18 @@ import config
 st.set_page_config(page_title="Havas Analytics", layout="wide")
 st.title("Havas Analytics")
 
+st.markdown("""
+<style>
+[data-testid="stMetric"] {
+    background-color: rgba(128, 128, 128, 0.06);
+    border: 1px solid rgba(128, 128, 128, 0.15);
+    padding: 16px 18px;
+    border-radius: 12px;
+}
+[data-testid="stMetricLabel"] { font-size: 13px; opacity: 0.75; }
+</style>
+""", unsafe_allow_html=True)
+
 if not config.SUPABASE_URL:
     st.warning("Настройте Supabase в config.py")
     st.stop()
@@ -179,8 +191,20 @@ dwell = compute_dwell_times(df_period)
 avg_dwell = dwell["duration_min"].mean() if not dwell.empty else None
 median_dwell = dwell["duration_min"].median() if not dwell.empty else None
 
+# Compare against the immediately preceding period of equal length
+# (e.g. "Неделя" compares to the week before it) to show a trend arrow.
+period_length = period_end - period_start
+prev_start = period_start - period_length
+prev_end = period_start - timedelta(microseconds=1)
+df_prev_in = fetch_visits(prev_start, prev_end)
+prev_total_in = len(df_prev_in[df_prev_in["direction"] == "IN"])
+delta_pct = ((total_in - prev_total_in) / prev_total_in * 100) if prev_total_in else None
+
 col1, col2, col3, col4 = st.columns(4)
-col1.metric(f"Входов ({period_choice.lower()})", total_in)
+col1.metric(
+    f"Входов ({period_choice.lower()})", total_in,
+    delta=f"{delta_pct:+.0f}% vs пред. период" if delta_pct is not None else None,
+)
 col2.metric("Новые", f"{new_count} ({new_pct:.0f}%)")
 col3.metric("Повторные", f"{repeat_count} ({repeat_pct:.0f}%)")
 col4.metric(
@@ -223,9 +247,10 @@ with col_right:
     if total_in:
         pie_data = df_in["is_repeat"].map({False: "Новые", True: "Повторные"}).value_counts().reset_index()
         pie_data.columns = ["Тип", "Количество"]
-        fig_pie = px.pie(pie_data, names="Тип", values="Количество",
+        fig_pie = px.pie(pie_data, names="Тип", values="Количество", hole=0.55,
                           color="Тип",
                           color_discrete_map={"Новые": "#1f77b4", "Повторные": "#ff7f0e"})
+        fig_pie.update_traces(textinfo="percent+label", textfont_size=14)
         st.plotly_chart(fig_pie, use_container_width=True)
     else:
         st.info("Нет данных за этот период")
@@ -292,17 +317,35 @@ else:
 
 st.divider()
 
-# --- Events table + export ---
-st.subheader(f"События ({period_choice.lower()})")
+# --- Live feed + export ---
+st.subheader(f"Живая лента ({period_choice.lower()})")
 if not df_period.empty:
     table = df_period.copy()
-    table["Время"] = table["timestamp"].dt.strftime("%d.%m.%Y %H:%M:%S")
-    table["Направление"] = table["direction"]
+    table["Дата"] = table["timestamp"].dt.strftime("%d.%m.%Y")
+    table["Время"] = table["timestamp"].dt.strftime("%H:%M:%S")
     table["Тип"] = table["is_repeat"].map({False: "Новый", True: "Повторный"})
-    display_cols = table[["Время", "Направление", "Тип"]].head(50)
-    st.dataframe(display_cols, use_container_width=True, hide_index=True)
 
-    csv_bytes = table[["Время", "Направление", "Тип", "visitor_id"]].to_csv(index=False).encode("utf-8")
+    dir_colors = {"IN": "#2ca02c", "OUT": "#d62728"}
+    dir_labels = {"IN": "Вошёл", "OUT": "Вышел"}
+    type_colors = {"Новый": "#1f77b4", "Повторный": "#ff7f0e"}
+
+    rows_html = []
+    for _, row in table.head(15).iterrows():
+        d_color = dir_colors[row["direction"]]
+        t_color = type_colors[row["Тип"]]
+        rows_html.append(f"""
+        <div style="display:flex;align-items:center;justify-content:space-between;
+                    padding:10px 4px;border-bottom:1px solid rgba(128,128,128,0.15)">
+            <span style="opacity:0.7;font-size:14px">{row['Дата']} {row['Время']}</span>
+            <span style="background:{d_color}22;color:{d_color};padding:3px 10px;
+                        border-radius:12px;font-size:12px;font-weight:600">{dir_labels[row['direction']]}</span>
+            <span style="background:{t_color}22;color:{t_color};padding:3px 10px;
+                        border-radius:12px;font-size:12px;font-weight:600">{row['Тип']}</span>
+        </div>
+        """)
+    st.markdown("".join(rows_html), unsafe_allow_html=True)
+
+    csv_bytes = table[["Дата", "Время", "direction", "Тип", "visitor_id"]].to_csv(index=False).encode("utf-8")
     st.download_button(
         "Скачать CSV за период", data=csv_bytes,
         file_name=f"havas_visits_{period_choice}.csv", mime="text/csv",

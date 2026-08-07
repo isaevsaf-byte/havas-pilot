@@ -191,11 +191,16 @@ dwell = compute_dwell_times(df_period)
 avg_dwell = dwell["duration_min"].mean() if not dwell.empty else None
 median_dwell = dwell["duration_min"].median() if not dwell.empty else None
 
-# Compare against the immediately preceding period of equal length
-# (e.g. "Неделя" compares to the week before it) to show a trend arrow.
-period_length = period_end - period_start
-prev_start = period_start - period_length
-prev_end = period_start - timedelta(microseconds=1)
+# Compare against the immediately preceding period, using the SAME elapsed
+# duration — not the full previous period. Otherwise "Сегодня" (a partial
+# day, still in progress) gets compared against a complete "Вчера" and
+# always looks artificially down.
+now_local = datetime.now(TASHKENT_TZ)
+effective_end = min(now_local, period_end)
+elapsed = effective_end - period_start
+nominal_length = period_end - period_start
+prev_start = period_start - nominal_length
+prev_end = prev_start + elapsed
 df_prev_in = fetch_visits(prev_start, prev_end)
 prev_total_in = len(df_prev_in[df_prev_in["direction"] == "IN"])
 delta_pct = ((total_in - prev_total_in) / prev_total_in * 100) if prev_total_in else None
@@ -203,7 +208,7 @@ delta_pct = ((total_in - prev_total_in) / prev_total_in * 100) if prev_total_in 
 col1, col2, col3, col4 = st.columns(4)
 col1.metric(
     f"Входов ({period_choice.lower()})", total_in,
-    delta=f"{delta_pct:+.0f}% vs пред. период" if delta_pct is not None else None,
+    delta=f"{delta_pct:+.0f}% vs пред. период (то же время)" if delta_pct is not None else None,
 )
 col2.metric("Новые", f"{new_count} ({new_pct:.0f}%)")
 col3.metric("Повторные", f"{repeat_count} ({repeat_pct:.0f}%)")

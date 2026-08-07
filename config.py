@@ -3,6 +3,8 @@ import os
 # === CAMERA ===
 CAMERA_URL = os.getenv("CAMERA_URL", "rtsp://admin:admin@192.168.1.64:554/stream1")
 CAMERA_RECONNECT_DELAY_SEC = 10  # seconds to wait before retrying a failed camera connection
+CAMERA_OPEN_TIMEOUT_MS = 15000   # max time to wait for the RTSP connection to open
+CAMERA_READ_TIMEOUT_MS = 15000   # max time to wait for a single frame read before it counts as failed
 QUEUE_RETRY_DELAY_SEC = 5        # seconds to wait before retrying a failed cloud event
 
 # === DETECTION / TRACKING ===

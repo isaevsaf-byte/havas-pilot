@@ -23,8 +23,14 @@ event_queue = queue.Queue()
 
 
 def connect_camera() -> cv2.VideoCapture:
+    # Bound how long a hung RTSP connect/read can block us — without this,
+    # FFmpeg's own internal timeout decides (observed 30s to 8.5 minutes in
+    # the wild), which is far too unpredictable for a reconnect loop.
     while True:
-        cap = cv2.VideoCapture(config.CAMERA_URL)
+        cap = cv2.VideoCapture()
+        cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, config.CAMERA_OPEN_TIMEOUT_MS)
+        cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, config.CAMERA_READ_TIMEOUT_MS)
+        cap.open(config.CAMERA_URL, cv2.CAP_FFMPEG)
         if cap.isOpened():
             return cap
         logger.warning("Камера недоступна, жду %d секунд...", config.CAMERA_RECONNECT_DELAY_SEC)

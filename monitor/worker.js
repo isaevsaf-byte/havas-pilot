@@ -2,7 +2,7 @@ const SUPABASE_URL = "https://kxyyvnxklbczuofzaoow.supabase.co";
 const SUPABASE_KEY = "sb_publishable_79gUEoh_qoocFxnwied-Tw_IE3uU00j";
 const CHAT_ID = "90364962";
 const THRESHOLD_MIN = 15;      // alert if no heartbeat for longer than this
-const REMINDER_EVERY = 4;      // with a 5-min cron, resend "still down" every ~20 min
+const REMINDER_EVERY = 12;     // with a 5-min cron, resend "still down" every ~60 min
 
 export default {
   async scheduled(event, env, ctx) {

@@ -1,7 +1,14 @@
+import atexit
+import faulthandler
 import logging
+import os
 import queue
+import subprocess
 import threading
 import time
+import traceback
+from datetime import datetime
+from pathlib import Path
 from typing import Tuple
 
 import cv2
@@ -15,11 +22,59 @@ from tracker import PersonTracker
 from reid import ReIDChecker
 from database import LocalDB, CloudDB
 
+# A segfault/access violation inside OpenCV/FFmpeg's native code bypasses
+# Python's exception machinery entirely — the try/except around main() below
+# never sees it. faulthandler installs a low-level handler that can still
+# dump a traceback for those before the process dies.
+_fault_log_dir = Path(__file__).parent / "logs"
+_fault_log_dir.mkdir(exist_ok=True)
+_fault_file = open(_fault_log_dir / "fault.log", "a", encoding="utf-8")
+faulthandler.enable(file=_fault_file)
+
 setup_logging()
 logger = logging.getLogger(__name__)
 
 # --- State ---
 event_queue = queue.Queue()
+
+LOCK_FILE = Path(__file__).parent / "service.lock"
+CRASH_LOG = Path(__file__).parent / "logs" / "crash.log"
+
+
+def _pid_is_alive(pid: str) -> bool:
+    # Filtered by image name too, not just PID — a bare PID match can be a
+    # stale false positive once the OS recycles the number for an unrelated
+    # process.
+    result = subprocess.run(
+        ["tasklist", "/FI", f"PID eq {pid}", "/FI", "IMAGENAME eq python.exe"],
+        capture_output=True,
+        text=True,
+    )
+    return pid in result.stdout
+
+
+def _release_lock() -> None:
+    try:
+        LOCK_FILE.unlink()
+    except FileNotFoundError:
+        pass
+
+
+def acquire_lock() -> None:
+    # Guards against a second instance fighting an orphaned one for the
+    # camera — the orphan holds the RTSP connection, the new instance just
+    # loops failing to connect, and nothing about that looks unusual enough
+    # to page anyone. Refusing to start is more honest than a silent stalemate.
+    if LOCK_FILE.exists():
+        old_pid = LOCK_FILE.read_text().strip()
+        if old_pid and _pid_is_alive(old_pid):
+            logger.error(
+                "main.py уже запущен (PID %s), не подключаюсь к камере, выхожу", old_pid
+            )
+            raise SystemExit(1)
+        logger.warning("Найден lock-файл от мёртвого PID %s, перезаписываю", old_pid)
+    LOCK_FILE.write_text(str(os.getpid()))
+    atexit.register(_release_lock)
 
 
 def connect_camera() -> cv2.VideoCapture:
@@ -62,6 +117,8 @@ def cloud_sender(cloud_db: CloudDB) -> None:
 
 
 def main() -> None:
+    acquire_lock()
+
     detector = PersonDetector()
     tracker = PersonTracker()
     local_db = LocalDB()
@@ -106,4 +163,12 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception:
+        CRASH_LOG.parent.mkdir(exist_ok=True)
+        with CRASH_LOG.open("a", encoding="utf-8") as f:
+            f.write(f"\n=== {datetime.now().isoformat()} ===\n")
+            traceback.print_exc(file=f)
+        logger.exception("main.py упал с необработанным исключением")
+        raise

@@ -73,9 +73,9 @@ class TestShouldCount:
 # ---------------------------------------------------------------------------
 
 class TestGetDirection:
-    def test_no_first_position_returns_in(self):
+    def test_no_first_position_returns_none(self):
         state = PipelineState()
-        assert state.get_direction(1, 50) == "IN"
+        assert state.get_direction(1, 50) is None
 
     def test_moved_down_returns_in(self):
         state = PipelineState()
@@ -87,10 +87,13 @@ class TestGetDirection:
         state.record_first_position(1, 100)
         assert state.get_direction(1, 50) == "OUT"
 
-    def test_same_position_returns_in(self):
+    def test_same_position_returns_none(self):
+        """A track_id first seen exactly at the counting line (the common
+        case: tracker re-acquires an ID mid-crossing) can't be classified —
+        it must not silently default to IN."""
         state = PipelineState()
         state.record_first_position(1, 100)
-        assert state.get_direction(1, 100) == "IN"
+        assert state.get_direction(1, 100) is None
 
 
 # ---------------------------------------------------------------------------

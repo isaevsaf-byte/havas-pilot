@@ -2,6 +2,7 @@
 
 import threading
 import time
+from typing import Optional
 
 import config
 
@@ -50,12 +51,22 @@ class PipelineState:
         self.mark_counted(track_id)
         return True
 
-    def get_direction(self, track_id, cy) -> str:
-        """Return 'IN' or 'OUT' based on first-seen vs current y-centre."""
-        # Compare against where the track first appeared, not the previous frame:
-        # frame-to-frame bbox jitter flips direction, entry point does not.
+    def get_direction(self, track_id, cy) -> Optional[str]:
+        """Return 'IN' or 'OUT' based on first-seen vs current y-centre, or
+        None when direction can't be determined.
+
+        Compare against where the track first appeared, not the previous
+        frame: frame-to-frame bbox jitter flips direction, entry point does
+        not. cy == first (including a brand-new track_id, since
+        record_first_position and get_direction are called with the same cy
+        in the same frame) means this track was first seen right at the
+        counting line — most often the tracker losing and re-acquiring an
+        ID mid-crossing, where occlusion/frame noise is worst. Guessing
+        "IN" here used to silently bias every fragmented track toward IN;
+        returning None lets the caller skip logging an event it can't back.
+        """
         with self._lock:
             first = self._first_positions.get(track_id)
         if first is None or cy == first:
-            return "IN"
+            return None
         return "IN" if cy > first else "OUT"

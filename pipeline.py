@@ -75,16 +75,19 @@ def check_visitors(
             if reid_result is not None:
                 state.mark_counted(track_id)
                 direction = state.get_direction(track_id, cy)
-                event_queue.put(("visit", {
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                    "direction": direction,
-                    "is_repeat": reid_result["status"] == "repeat",
-                    "visitor_id": reid_result["visitor_id"],
-                }))
                 short_id = reid_result["visitor_id"][:8]
-                logger.info("%s | %s | visitor_%s", direction, reid_result["status"], short_id)
-                color = (0, 255, 0) if reid_result["status"] == "new" else (255, 0, 0)
-                label = f"{direction} | {reid_result['status']}"
+                if direction is not None:
+                    event_queue.put(("visit", {
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "direction": direction,
+                        "is_repeat": reid_result["status"] == "repeat",
+                        "visitor_id": reid_result["visitor_id"],
+                    }))
+                    logger.info("%s | %s | visitor_%s", direction, reid_result["status"], short_id)
+                    color = (0, 255, 0) if reid_result["status"] == "new" else (255, 0, 0)
+                    label = f"{direction} | {reid_result['status']}"
+                else:
+                    logger.debug("direction undetermined | %s | visitor_%s", reid_result["status"], short_id)
 
         results.append({
             "bbox": bbox,

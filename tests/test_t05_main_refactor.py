@@ -169,6 +169,10 @@ class TestCheckVisitors:
         """
         reid = Mock()
         state = PipelineState()
+        # Seed first_position away from the line: cy==first is the separate
+        # "direction undetermined" case (state.py get_direction) and would
+        # mask what this test is actually checking.
+        state.record_first_position(1, 100)
         frame = np.zeros((480, 640, 3), dtype=np.uint8)
         event_queue = queue.Queue()
 

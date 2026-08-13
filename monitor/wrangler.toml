@@ -1,0 +1,10 @@
+name = "havas-pilot-monitor"
+main = "worker.js"
+compatibility_date = "2024-01-01"
+
+[triggers]
+crons = ["*/5 * * * *"]
+
+[[kv_namespaces]]
+binding = "MONITOR_KV"
+id = "a61e1d27f72d4453acbb6c404fdef0fb"

@@ -74,6 +74,28 @@ def status_banner(icon: str, text: str, color: str):
     """, unsafe_allow_html=True)
 
 
+def metric_card(label: str, value: str, delta: str = None, delta_positive: bool = True):
+    # Custom HTML instead of st.metric: Streamlit's own metric widget
+    # truncates its value/label text with "…" in narrow columns via JS
+    # measurement, which no CSS override can undo. Single-line HTML (see
+    # the note above the incidents block) to dodge the markdown code-block trap.
+    delta_html = ""
+    if delta is not None:
+        color = STATUS_GOOD if delta_positive else STATUS_CRITICAL
+        arrow = "↑" if delta_positive else "↓"
+        delta_html = f'<div style="color:{color};font-size:13px;margin-top:4px">{arrow} {delta}</div>'
+    st.markdown(
+        f'<div style="background:{SURFACE};border:1px solid {BORDER};border-radius:12px;'
+        f'padding:18px 20px;box-shadow:0 1px 2px rgba(11,11,11,0.04);height:100%">'
+        f'<div style="color:{TEXT_MUTED};font-size:13px;overflow-wrap:break-word">{label}</div>'
+        f'<div style="color:{TEXT_PRIMARY};font-size:1.9rem;font-weight:600;'
+        f'font-variant-numeric:tabular-nums;overflow-wrap:break-word;line-height:1.2;margin-top:4px">{value}</div>'
+        f'{delta_html}'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+
+
 st.markdown(f"""
 <style>
 html, body, [class*="css"] {{ font-family: {FONT_STACK}; }}
@@ -82,16 +104,6 @@ html, body, [class*="css"] {{ font-family: {FONT_STACK}; }}
 
 h1#havas-analytics {{ font-weight: 700; letter-spacing: -0.02em; margin-bottom: 0; }}
 .havas-subtitle {{ color: {TEXT_MUTED}; font-size: 14px; margin-top: -6px; margin-bottom: 20px; }}
-
-[data-testid="stMetric"] {{
-    background-color: {SURFACE};
-    border: 1px solid {BORDER};
-    padding: 18px 20px;
-    border-radius: 12px;
-    box-shadow: 0 1px 2px rgba(11,11,11,0.04);
-}}
-[data-testid="stMetricLabel"] {{ font-size: 13px; color: {TEXT_MUTED}; }}
-[data-testid="stMetricValue"] {{ font-variant-numeric: tabular-nums; color: {TEXT_PRIMARY}; }}
 
 [data-testid="stExpander"] {{
     background-color: {SURFACE};
@@ -356,16 +368,21 @@ prev_total_in = len(df_prev_in[df_prev_in["direction"] == "IN"])
 delta_pct = ((total_in - prev_total_in) / prev_total_in * 100) if prev_total_in else None
 
 col1, col2, col3, col4 = st.columns(4)
-col1.metric(
-    f"Входов ({period_choice.lower()})", total_in,
-    delta=f"{delta_pct:+.0f}% vs пред. период (то же время)" if delta_pct is not None else None,
-)
-col2.metric("Новые", f"{new_count} ({new_pct:.0f}%)")
-col3.metric("Повторные", f"{repeat_count} ({repeat_pct:.0f}%)")
-col4.metric(
-    "Время в магазине (медиана / среднее)",
-    f"{median_dwell:.0f} / {avg_dwell:.0f} мин" if avg_dwell else "—",
-)
+with col1:
+    metric_card(
+        f"Входов ({period_choice.lower()})", str(total_in),
+        delta=f"{delta_pct:+.0f}% vs пред. период (то же время)" if delta_pct is not None else None,
+        delta_positive=delta_pct is not None and delta_pct >= 0,
+    )
+with col2:
+    metric_card("Новые", f"{new_count} ({new_pct:.0f}%)")
+with col3:
+    metric_card("Повторные", f"{repeat_count} ({repeat_pct:.0f}%)")
+with col4:
+    metric_card(
+        "Время в магазине (медиана / среднее)",
+        f"{median_dwell:.0f} / {avg_dwell:.0f} мин" if avg_dwell else "—",
+    )
 
 st.divider()
 

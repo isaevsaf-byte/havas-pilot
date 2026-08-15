@@ -142,7 +142,10 @@ else:
     age = datetime.now(timezone.utc) - last_seen
     last_seen_local = last_seen.tz_convert(TASHKENT_TZ)
     if age < timedelta(minutes=10):
-        st.success("🟢 Система работает")
+        if heartbeat.get("status") == "camera_down":
+            st.warning("🟡 Сервис работает, но камера недоступна")
+        else:
+            st.success("🟢 Система работает")
     else:
         st.error(f"🔴 Система не отвечает — последний сигнал: {last_seen_local.strftime('%d.%m.%Y %H:%M')}")
 
@@ -164,16 +167,19 @@ def format_duration(minutes):
     return f"{hours} ч {mins} мин"
 
 
+TYPE_LABEL = {"camera": "📷 камера", "service": "🖥️ сервис/интернет"}
+
 incidents = fetch_incidents()
 if incidents:
     with st.expander(f"📉 История простоев ({len(incidents)})"):
         for inc in incidents:
             started = pd.to_datetime(inc["started_at"], utc=True).tz_convert(TASHKENT_TZ)
             duration = format_duration(inc.get("duration_min"))
+            type_label = TYPE_LABEL.get(inc.get("type"), inc.get("type") or "неизвестно")
             if inc.get("ended_at") is None:
-                st.markdown(f"🔴 **с {started.strftime('%d.%m.%Y %H:%M')}** — {duration}")
+                st.markdown(f"🔴 **с {started.strftime('%d.%m.%Y %H:%M')}** — {duration} · {type_label}")
             else:
-                st.markdown(f"⚪ **{started.strftime('%d.%m.%Y %H:%M')}** — простой {duration}")
+                st.markdown(f"⚪ **{started.strftime('%d.%m.%Y %H:%M')}** — простой {duration} · {type_label}")
 
 st.divider()
 

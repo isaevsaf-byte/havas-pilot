@@ -9,7 +9,7 @@ import cv2
 import config
 from logger import setup_logging
 from state import PipelineState
-from pipeline import process_frame, check_visitors, render_overlay, handle_heartbeat
+from pipeline import process_frame, check_visitors, render_overlay
 from detector import PersonDetector
 from tracker import PersonTracker
 from reid import ReIDChecker
@@ -97,7 +97,9 @@ def main():
         render_overlay(frame, tracks_with_results, line_y)
 
         frame_count += 1
-        frame_count = handle_heartbeat(frame_count, event_queue)
+        if frame_count >= 750:
+            event_queue.put(("heartbeat", {}))
+            frame_count = 0
 
         # Process events immediately (no separate cloud_sender thread in test)
         process_events(event_queue, cloud_db, stats)

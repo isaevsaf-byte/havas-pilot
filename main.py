@@ -16,7 +16,7 @@ import cv2
 import config
 from logger import setup_logging
 from state import PipelineState
-from pipeline import process_frame, check_visitors, render_overlay, handle_heartbeat
+from pipeline import process_frame, check_visitors, render_overlay
 from detector import PersonDetector
 from tracker import PersonTracker
 from reid import ReIDChecker
@@ -77,7 +77,7 @@ def acquire_lock() -> None:
     atexit.register(_release_lock)
 
 
-def connect_camera() -> cv2.VideoCapture:
+def connect_camera(camera_ok: threading.Event) -> cv2.VideoCapture:
     # Bound how long a hung RTSP connect/read can block us — without this,
     # FFmpeg's own internal timeout decides (observed 30s to 8.5 minutes in
     # the wild), which is far too unpredictable for a reconnect loop.
@@ -87,10 +87,23 @@ def connect_camera() -> cv2.VideoCapture:
         cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, config.CAMERA_READ_TIMEOUT_MS)
         cap.open(config.CAMERA_URL, cv2.CAP_FFMPEG)
         if cap.isOpened():
+            camera_ok.set()
             return cap
+        camera_ok.clear()
         logger.warning("Камера недоступна, жду %d секунд...", config.CAMERA_RECONNECT_DELAY_SEC)
         cap.release()
         time.sleep(config.CAMERA_RECONNECT_DELAY_SEC)
+
+
+def heartbeat_sender(event_queue: queue.Queue, camera_ok: threading.Event) -> None:
+    # Runs on its own timer, independent of the video loop — a camera that's
+    # stuck reconnecting for hours must not also silence the heartbeat the
+    # dashboard/monitor depends on to tell "service down" apart from
+    # "service fine, camera's the problem" (see incidents.type).
+    while True:
+        status = "ok" if camera_ok.is_set() else "camera_down"
+        event_queue.put(("heartbeat", {"status": status}))
+        time.sleep(config.HEARTBEAT_INTERVAL_SEC)
 
 
 def cloud_sender(cloud_db: CloudDB) -> None:
@@ -109,7 +122,7 @@ def cloud_sender(cloud_db: CloudDB) -> None:
             if kind == "visit":
                 cloud_db.log_visit(**payload)
             elif kind == "heartbeat":
-                cloud_db.log_heartbeat()
+                cloud_db.log_heartbeat(status=payload.get("status", "ok"))
         except Exception as e:
             logger.error("cloud_sender: ошибка отправки, вернул в очередь: %s", e)
             event_queue.put((kind, payload))
@@ -129,15 +142,19 @@ def main() -> None:
     sender = threading.Thread(target=cloud_sender, args=(cloud_db,), daemon=True)
     sender.start()
 
-    cap = connect_camera()
-    frame_count = 0
+    camera_ok = threading.Event()
+    heartbeat = threading.Thread(target=heartbeat_sender, args=(event_queue, camera_ok), daemon=True)
+    heartbeat.start()
+
+    cap = connect_camera(camera_ok)
 
     while True:
         ret, frame = cap.read()
         if not ret:
             logger.warning("Кадр не получен, переподключаюсь...")
+            camera_ok.clear()
             cap.release()
-            cap = connect_camera()
+            cap = connect_camera(camera_ok)
             continue
 
         height, width = frame.shape[:2]
@@ -148,9 +165,6 @@ def main() -> None:
 
         if not config.HEADLESS:
             render_overlay(frame, tracks_with_results, line_y)
-
-        frame_count += 1
-        frame_count = handle_heartbeat(frame_count, event_queue)
 
         if not config.HEADLESS:
             cv2.imshow("Havas Pilot", frame)

@@ -61,7 +61,7 @@ class TestDatabaseTypeHints:
         source_file = Path(__file__).parent.parent / "database.py"
         source = source_file.read_text()
 
-        assert "def log_heartbeat(self) -> None" in source
+        assert "def log_heartbeat(self, status: str = \"ok\") -> None" in source
 
 
 class TestReIDTypeHints:
@@ -136,13 +136,6 @@ class TestPipelineTypeHints:
 
         assert "def render_overlay(frame: np.ndarray, tracks_with_results: List[Dict[str, Any]], line_y: float) -> None" in source
 
-    def test_handle_heartbeat_signature(self):
-        """handle_heartbeat should have type hints."""
-        source_file = Path(__file__).parent.parent / "pipeline.py"
-        source = source_file.read_text()
-
-        assert "def handle_heartbeat(frame_count: int, event_queue: queue.Queue) -> int" in source
-
 
 class TestMainTypeHints:
     """Verify type hints in main.py"""
@@ -152,7 +145,7 @@ class TestMainTypeHints:
         source_file = Path(__file__).parent.parent / "main.py"
         source = source_file.read_text()
 
-        assert "def connect_camera() -> cv2.VideoCapture" in source
+        assert "def connect_camera(camera_ok: threading.Event) -> cv2.VideoCapture" in source
 
     def test_cloud_sender_signature(self):
         """cloud_sender should have type hints."""

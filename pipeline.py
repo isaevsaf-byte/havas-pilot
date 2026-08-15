@@ -119,19 +119,3 @@ def render_overlay(frame: np.ndarray, tracks_with_results: List[Dict[str, Any]],
                         cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 1)
 
     cv2.line(frame, (0, line_y), (width, line_y), (0, 255, 255), 2)
-
-
-def handle_heartbeat(frame_count: int, event_queue: queue.Queue) -> int:
-    """Check if it's time to send heartbeat and reset counter.
-
-    Args:
-        frame_count: Current frame count
-        event_queue: Queue for events
-
-    Returns:
-        Reset frame_count (0) or original value
-    """
-    if frame_count >= config.HEARTBEAT_EVERY_N_FRAMES:
-        event_queue.put(("heartbeat", {}))
-        return 0
-    return frame_count

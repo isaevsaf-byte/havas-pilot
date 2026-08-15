@@ -32,42 +32,66 @@ async function checkHeartbeat(env) {
 
   const lastSeen = new Date(row.last_seen);
   const ageMin = (Date.now() - lastSeen.getTime()) / 60000;
-  const prevStatus = (await env.MONITOR_KV.get("status")) || "up";
 
-  if (ageMin > THRESHOLD_MIN) {
-    if (prevStatus === "up") {
-      const incidentId = await openIncident(row.last_seen);
-      if (incidentId) await env.MONITOR_KV.put("incident_id", String(incidentId));
-      await env.MONITOR_KV.put("status", "down");
-      await env.MONITOR_KV.put("down_count", "0");
-      await sendTelegram(
-        env,
-        `🔴 Havas Pilot: сервис не отвечает уже ${Math.round(ageMin)} мин (последний сигнал: ${row.last_seen})`
-      );
-    } else {
+  // Three states: "up", "camera_down" (heartbeat itself is fine — the
+  // pipeline's own heartbeat thread keeps sending even while the video
+  // loop is stuck reconnecting — but row.status says the camera isn't),
+  // "down" (heartbeat has gone stale — laptop/network, camera status is
+  // unknown/stale and not trusted).
+  const newState = ageMin > THRESHOLD_MIN ? "down" : (row.status === "camera_down" ? "camera_down" : "up");
+  const prevState = (await env.MONITOR_KV.get("status")) || "up";
+
+  if (newState === prevState) {
+    if (newState !== "up") {
       const count = parseInt((await env.MONITOR_KV.get("down_count")) || "0", 10) + 1;
       await env.MONITOR_KV.put("down_count", String(count));
       if (count % REMINDER_EVERY === 0) {
-        await sendTelegram(
-          env,
-          `🔴 Havas Pilot: всё ещё не отвечает (простой ~${Math.round(ageMin)} мин)`
-        );
+        const durMin = await stateDurationMin(env, ageMin);
+        const text = newState === "camera_down"
+          ? `🟡 Havas Pilot: камера всё ещё недоступна (~${durMin} мин), сервис работает`
+          : `🔴 Havas Pilot: всё ещё не отвечает (простой ~${durMin} мин)`;
+        await sendTelegram(env, text);
       }
     }
-  } else if (prevStatus === "down") {
+    return;
+  }
+
+  // State changed — close whatever incident was open for the previous state.
+  if (prevState !== "up") {
     const incidentId = await env.MONITOR_KV.get("incident_id");
     if (incidentId) await closeIncident(incidentId);
-    await env.MONITOR_KV.put("status", "up");
-    await env.MONITOR_KV.put("down_count", "0");
     await env.MONITOR_KV.delete("incident_id");
+  }
+
+  const nowIso = new Date().toISOString();
+  if (newState === "up") {
+    const durMin = await stateDurationMin(env, ageMin);
+    await sendTelegram(env, `✅ Havas Pilot: снова в порядке (простой ~${durMin} мин)`);
+  } else if (newState === "camera_down") {
+    const incidentId = await openIncident(nowIso, "camera");
+    if (incidentId) await env.MONITOR_KV.put("incident_id", String(incidentId));
+    await sendTelegram(env, `🟡 Havas Pilot: сервис работает, но камера недоступна`);
+  } else {
+    const incidentId = await openIncident(row.last_seen, "service");
+    if (incidentId) await env.MONITOR_KV.put("incident_id", String(incidentId));
     await sendTelegram(
       env,
-      `✅ Havas Pilot: сервис снова отвечает (простой ~${Math.round(ageMin)} мин с последнего сигнала)`
+      `🔴 Havas Pilot: сервис не отвечает уже ${Math.round(ageMin)} мин (последний сигнал: ${row.last_seen})`
     );
   }
+
+  await env.MONITOR_KV.put("status", newState);
+  await env.MONITOR_KV.put("down_count", "0");
+  await env.MONITOR_KV.put("state_since", nowIso);
 }
 
-async function openIncident(startedAt) {
+async function stateDurationMin(env, fallbackAgeMin) {
+  const sinceIso = await env.MONITOR_KV.get("state_since");
+  if (!sinceIso) return Math.round(fallbackAgeMin);
+  return Math.round((Date.now() - new Date(sinceIso).getTime()) / 60000);
+}
+
+async function openIncident(startedAt, type) {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/incidents`, {
     method: "POST",
     headers: {
@@ -76,7 +100,7 @@ async function openIncident(startedAt) {
       "Content-Type": "application/json",
       Prefer: "return=representation",
     },
-    body: JSON.stringify({ store: STORE, started_at: startedAt }),
+    body: JSON.stringify({ store: STORE, started_at: startedAt, type }),
   });
   if (!res.ok) {
     console.log("openIncident failed", res.status, await res.text());

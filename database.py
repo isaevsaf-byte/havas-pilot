@@ -186,9 +186,9 @@ class CloudDB:
             return
         self.client.table("visits").insert(payload).execute()
 
-    def log_heartbeat(self) -> None:
+    def log_heartbeat(self, status: str = "ok") -> None:
         now = datetime.now(timezone.utc).isoformat()
-        payload = {"store": config.STORE_NAME, "last_seen": now}
+        payload = {"store": config.STORE_NAME, "last_seen": now, "status": status}
         if self.offline:
             logger.debug("heartbeat (offline): %s", payload)
             return

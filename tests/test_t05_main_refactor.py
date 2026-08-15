@@ -18,7 +18,6 @@ from pipeline import (  # noqa: E402
     process_frame,
     check_visitors,
     render_overlay,
-    handle_heartbeat,
 )
 
 
@@ -289,52 +288,3 @@ class TestRenderOverlay:
 
         # Should not raise even though label is empty
         render_overlay(frame, tracks_with_results, 240)
-
-
-# ---------------------------------------------------------------------------
-# handle_heartbeat
-# ---------------------------------------------------------------------------
-
-class TestHandleHeartbeat:
-    def test_returns_same_count_when_below_threshold(self):
-        """handle_heartbeat() returns frame_count unchanged if below threshold."""
-        event_queue = queue.Queue()
-        count = 50
-
-        result = handle_heartbeat(count, event_queue)
-
-        assert result == 50
-        assert event_queue.empty()
-
-    def test_queues_heartbeat_at_threshold(self):
-        """handle_heartbeat() queues heartbeat when frame_count >= threshold."""
-        event_queue = queue.Queue()
-        count = config.HEARTBEAT_EVERY_N_FRAMES
-
-        result = handle_heartbeat(count, event_queue)
-
-        assert not event_queue.empty()
-        kind, payload = event_queue.get()
-        assert kind == "heartbeat"
-        assert payload == {}
-
-    def test_resets_count_to_zero_at_threshold(self):
-        """handle_heartbeat() returns 0 when threshold reached."""
-        event_queue = queue.Queue()
-        count = config.HEARTBEAT_EVERY_N_FRAMES
-
-        result = handle_heartbeat(count, event_queue)
-
-        assert result == 0
-
-    def test_queues_heartbeat_above_threshold(self):
-        """handle_heartbeat() queues heartbeat when frame_count > threshold."""
-        event_queue = queue.Queue()
-        count = config.HEARTBEAT_EVERY_N_FRAMES + 10
-
-        result = handle_heartbeat(count, event_queue)
-
-        assert not event_queue.empty()
-        kind, payload = event_queue.get()
-        assert kind == "heartbeat"
-        assert result == 0

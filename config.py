@@ -10,7 +10,8 @@ QUEUE_RETRY_DELAY_SEC = 5        # seconds to wait before retrying a failed clou
 # === DETECTION / TRACKING ===
 LINE_POSITION = 0.5              # vertical position of counting line (0.0–1.0 of frame height)
 LINE_TOLERANCE_PX = 20           # pixels around the line that trigger a count
-HEARTBEAT_EVERY_N_FRAMES = 750   # send a heartbeat every N processed frames
+HEARTBEAT_INTERVAL_SEC = 30      # send a heartbeat this often, on its own thread — independent
+                                  # of the video loop so a stuck camera can't silence it too
 MIN_CROP_W = 50                  # minimum bounding-box width (px) to accept a person crop
 MIN_CROP_H = 100                 # minimum bounding-box height (px) to accept a person crop
 

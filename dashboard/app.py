@@ -20,19 +20,104 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import config
 
 st.set_page_config(page_title="Havas Analytics", layout="wide")
-st.title("Havas Analytics")
 
-st.markdown("""
+# --- Palette (validated: see dataviz skill references/palette.md) ---
+COLOR_NEW = "#2a78d6"       # categorical slot 1 — blue
+COLOR_REPEAT = "#eb6834"    # categorical slot 2 — orange
+COLOR_IN = "#2a78d6"        # blue
+COLOR_OUT = "#4a3aa7"       # categorical slot 7 — violet
+COLOR_TREND = "#1baf7a"     # categorical slot 3 — aqua
+STATUS_GOOD = "#0ca30c"
+STATUS_WARNING = "#fab219"
+STATUS_CRITICAL = "#d03b3b"
+SURFACE = "#fcfcfb"
+PAGE_BG = "#f9f9f7"
+TEXT_PRIMARY = "#0b0b0b"
+TEXT_SECONDARY = "#52514e"
+TEXT_MUTED = "#898781"
+GRIDLINE = "#e1e0d9"
+BORDER = "rgba(11,11,11,0.10)"
+FONT_STACK = "system-ui, -apple-system, 'Segoe UI', sans-serif"
+
+
+def hex_to_rgba(hex_color: str, alpha: float) -> str:
+    """Plotly's color validators don't accept 8-digit #RRGGBBAA (CSS-only) — use this for fills."""
+    r, g, b = int(hex_color[1:3], 16), int(hex_color[3:5], 16), int(hex_color[5:7], 16)
+    return f"rgba({r},{g},{b},{alpha})"
+
+
+def style_fig(fig, height=None):
+    """Apply the shared chart theme: surface, ink, gridlines, font."""
+    fig.update_layout(
+        plot_bgcolor=SURFACE,
+        paper_bgcolor=SURFACE,
+        font=dict(family=FONT_STACK, color=TEXT_SECONDARY, size=13),
+        legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(color=TEXT_SECONDARY)),
+        margin=dict(t=16, b=10, l=10, r=10),
+        hoverlabel=dict(bgcolor=SURFACE, font=dict(family=FONT_STACK, color=TEXT_PRIMARY)),
+    )
+    fig.update_xaxes(gridcolor=GRIDLINE, linecolor=GRIDLINE, tickfont=dict(color=TEXT_MUTED), title_font=dict(color=TEXT_SECONDARY))
+    fig.update_yaxes(gridcolor=GRIDLINE, linecolor=GRIDLINE, tickfont=dict(color=TEXT_MUTED), title_font=dict(color=TEXT_SECONDARY))
+    if height:
+        fig.update_layout(height=height)
+    return fig
+
+
+def status_banner(icon: str, text: str, color: str):
+    st.markdown(f"""
+    <div style="display:flex;align-items:center;gap:10px;background:{color}14;
+                border:1px solid {color}40;border-left:4px solid {color};
+                border-radius:8px;padding:12px 16px;margin-bottom:12px">
+        <span style="font-size:18px;line-height:1">{icon}</span>
+        <span style="color:{TEXT_PRIMARY};font-weight:600;font-size:15px">{text}</span>
+    </div>
+    """, unsafe_allow_html=True)
+
+
+st.markdown(f"""
 <style>
-[data-testid="stMetric"] {
-    background-color: rgba(128, 128, 128, 0.06);
-    border: 1px solid rgba(128, 128, 128, 0.15);
-    padding: 16px 18px;
+html, body, [class*="css"] {{ font-family: {FONT_STACK}; }}
+.stApp {{ background-color: {PAGE_BG}; }}
+[data-testid="stHeader"] {{ background-color: transparent; }}
+
+h1#havas-analytics {{ font-weight: 700; letter-spacing: -0.02em; margin-bottom: 0; }}
+.havas-subtitle {{ color: {TEXT_MUTED}; font-size: 14px; margin-top: -6px; margin-bottom: 20px; }}
+
+[data-testid="stMetric"] {{
+    background-color: {SURFACE};
+    border: 1px solid {BORDER};
+    padding: 18px 20px;
     border-radius: 12px;
-}
-[data-testid="stMetricLabel"] { font-size: 13px; opacity: 0.75; }
+    box-shadow: 0 1px 2px rgba(11,11,11,0.04);
+}}
+[data-testid="stMetricLabel"] {{ font-size: 13px; color: {TEXT_MUTED}; }}
+[data-testid="stMetricValue"] {{ font-variant-numeric: tabular-nums; color: {TEXT_PRIMARY}; }}
+
+[data-testid="stExpander"] {{
+    background-color: {SURFACE};
+    border: 1px solid {BORDER};
+    border-radius: 10px;
+}}
+
+h3 {{ font-size: 16px !important; font-weight: 600 !important; color: {TEXT_PRIMARY}; }}
+
+div[role="radiogroup"] {{ gap: 4px; }}
+div[role="radiogroup"] label {{
+    background: {SURFACE};
+    border: 1px solid {BORDER};
+    border-radius: 8px;
+    padding: 6px 14px !important;
+    margin-right: 0 !important;
+    transition: background 0.15s;
+}}
+div[role="radiogroup"] label:hover {{ background: #f0efec; }}
+
+hr {{ border-color: {GRIDLINE} !important; margin: 1.6rem 0 !important; }}
 </style>
 """, unsafe_allow_html=True)
+
+st.markdown('<h1 id="havas-analytics">Havas Analytics</h1>', unsafe_allow_html=True)
+st.markdown('<div class="havas-subtitle">Учёт посетителей · магазин Ташкент</div>', unsafe_allow_html=True)
 
 if not config.SUPABASE_URL:
     st.warning("Настройте Supabase в config.py")
@@ -136,18 +221,22 @@ def compute_dwell_times(df: pd.DataFrame) -> pd.DataFrame:
 # --- Status bar ---
 heartbeat = fetch_heartbeat()
 if heartbeat is None:
-    st.warning("⚪ Нет данных от системы")
+    status_banner("⚪", "Нет данных от системы", TEXT_MUTED)
 else:
     last_seen = pd.to_datetime(heartbeat["last_seen"], utc=True)
     age = datetime.now(timezone.utc) - last_seen
     last_seen_local = last_seen.tz_convert(TASHKENT_TZ)
     if age < timedelta(minutes=10):
         if heartbeat.get("status") == "camera_down":
-            st.warning("🟡 Сервис работает, но камера недоступна")
+            status_banner("🟡", "Сервис работает, но камера недоступна", STATUS_WARNING)
         else:
-            st.success("🟢 Система работает")
+            status_banner("🟢", "Система работает", STATUS_GOOD)
     else:
-        st.error(f"🔴 Система не отвечает — последний сигнал: {last_seen_local.strftime('%d.%m.%Y %H:%M')}")
+        status_banner(
+            "🔴",
+            f"Система не отвечает — последний сигнал: {last_seen_local.strftime('%d.%m.%Y %H:%M')}",
+            STATUS_CRITICAL,
+        )
 
 with st.expander("⚠️ Что делать, чтобы сервис не падал"):
     st.markdown("""
@@ -172,14 +261,28 @@ TYPE_LABEL = {"camera": "📷 камера", "service": "🖥️ сервис/и
 incidents = fetch_incidents()
 if incidents:
     with st.expander(f"📉 История простоев ({len(incidents)})"):
+        # Built as single-line HTML (no embedded newlines/indentation) —
+        # Streamlit's markdown parser otherwise treats an indented line
+        # after a blank line as a literal code block, not HTML.
+        rows_html = []
         for inc in incidents:
             started = pd.to_datetime(inc["started_at"], utc=True).tz_convert(TASHKENT_TZ)
             duration = format_duration(inc.get("duration_min"))
             type_label = TYPE_LABEL.get(inc.get("type"), inc.get("type") or "неизвестно")
-            if inc.get("ended_at") is None:
-                st.markdown(f"🔴 **с {started.strftime('%d.%m.%Y %H:%M')}** — {duration} · {type_label}")
-            else:
-                st.markdown(f"⚪ **{started.strftime('%d.%m.%Y %H:%M')}** — простой {duration} · {type_label}")
+            ongoing = inc.get("ended_at") is None
+            accent = STATUS_CRITICAL if ongoing else TEXT_MUTED
+            status_text = "идёт сейчас" if ongoing else f"простой {duration}"
+            rows_html.append(
+                f'<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;'
+                f'padding:10px 14px;margin-bottom:6px;border-radius:8px;'
+                f'background:{SURFACE};border-left:3px solid {accent}">'
+                f'<span style="color:{TEXT_PRIMARY};font-weight:600;font-size:14px">{started.strftime("%d.%m.%Y %H:%M")}</span>'
+                f'<span style="color:{TEXT_SECONDARY};font-size:13px">{status_text}</span>'
+                f'<span style="background:{TEXT_MUTED}1a;color:{TEXT_SECONDARY};padding:3px 10px;'
+                f'border-radius:12px;font-size:12px;font-weight:600;white-space:nowrap">{type_label}</span>'
+                f'</div>'
+            )
+        st.markdown("".join(rows_html), unsafe_allow_html=True)
 
 st.divider()
 
@@ -282,9 +385,9 @@ with col_left:
         hourly = all_combos.merge(hourly, on=["hour", "Тип"], how="left").fillna(0)
         fig = px.bar(hourly, x="hour", y="count", color="Тип",
                      labels={"hour": "Час", "count": "Входов"},
-                     color_discrete_map={"Новые": "#1f77b4", "Повторные": "#ff7f0e"})
+                     color_discrete_map={"Новые": COLOR_NEW, "Повторные": COLOR_REPEAT})
         fig.update_xaxes(dtick=1)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(style_fig(fig), width="stretch")
     else:
         st.subheader("Входы по дням (новые / повторные)")
         df_daily = df_in.copy()
@@ -293,8 +396,8 @@ with col_left:
         daily = df_daily.groupby(["date", "Тип"]).size().reset_index(name="count")
         fig = px.bar(daily, x="date", y="count", color="Тип",
                      labels={"date": "Дата", "count": "Входов"},
-                     color_discrete_map={"Новые": "#1f77b4", "Повторные": "#ff7f0e"})
-        st.plotly_chart(fig, use_container_width=True)
+                     color_discrete_map={"Новые": COLOR_NEW, "Повторные": COLOR_REPEAT})
+        st.plotly_chart(style_fig(fig), width="stretch")
     if df_in.empty:
         st.info("Нет данных за этот период")
 
@@ -305,9 +408,9 @@ with col_right:
         pie_data.columns = ["Тип", "Количество"]
         fig_pie = px.pie(pie_data, names="Тип", values="Количество", hole=0.55,
                           color="Тип",
-                          color_discrete_map={"Новые": "#1f77b4", "Повторные": "#ff7f0e"})
-        fig_pie.update_traces(textinfo="percent+label", textfont_size=14)
-        st.plotly_chart(fig_pie, use_container_width=True)
+                          color_discrete_map={"Новые": COLOR_NEW, "Повторные": COLOR_REPEAT})
+        fig_pie.update_traces(textinfo="percent+label", textfont_size=14, marker=dict(line=dict(color=SURFACE, width=2)))
+        st.plotly_chart(style_fig(fig_pie), width="stretch")
     else:
         st.info("Нет данных за этот период")
 
@@ -322,8 +425,8 @@ with col_left2:
         fig_dwell = px.bar(dwell_avg, x="Тип", y="duration_min",
                             labels={"duration_min": "Минут в среднем"},
                             color="Тип",
-                            color_discrete_map={"Новые": "#1f77b4", "Повторные": "#ff7f0e"})
-        st.plotly_chart(fig_dwell, use_container_width=True)
+                            color_discrete_map={"Новые": COLOR_NEW, "Повторные": COLOR_REPEAT})
+        st.plotly_chart(style_fig(fig_dwell), width="stretch")
     else:
         st.info("Недостаточно завершённых визитов (нужна пара IN+OUT) за этот период")
 
@@ -340,8 +443,9 @@ with col_right2:
             fig_trend = px.line(weekly, x="week", y="repeat_pct",
                                  labels={"week": "Неделя", "repeat_pct": "% повторных"},
                                  markers=True,
-                                 color_discrete_sequence=["#2ca02c"])
-            st.plotly_chart(fig_trend, use_container_width=True)
+                                 color_discrete_sequence=[COLOR_TREND])
+            fig_trend.update_traces(line=dict(width=2), marker=dict(size=8))
+            st.plotly_chart(style_fig(fig_trend), width="stretch")
     else:
         st.info("Нет данных за последние 30 дней")
 
@@ -364,13 +468,13 @@ if not df_30.empty:
     ).fillna(0)
     pivot.index = [weekday_ru[d] for d in pivot.index]
     pivot = pivot.loc[(pivot != 0).any(axis=1), :]  # drop days with zero visits across all hours
-    pivot_display = pivot.replace(0, np.nan)  # blank cells instead of solid green for zero
-    smooth_scale = [(0.0, "#2ca02c"), (0.5, "#ffeb3b"), (1.0, "#d32f2f")]
+    pivot_display = pivot.replace(0, np.nan)  # blank cells instead of a solid color for zero
+    # Sequential magnitude → one hue, light to dark (not a rainbow).
+    sequential_scale = [(0.0, "#cde2fb"), (0.35, "#6da7ec"), (0.65, "#2a78d6"), (1.0, "#0d366b")]
     fig_heat = px.imshow(pivot_display, labels=dict(x="Час", y="День недели", color="Входов"),
-                          color_continuous_scale=smooth_scale, range_color=(0, pivot.values.max()),
+                          color_continuous_scale=sequential_scale, range_color=(0, pivot.values.max()),
                           aspect="auto", text_auto=True)
-    fig_heat.update_layout(height=400, plot_bgcolor="rgba(0,0,0,0)")
-    st.plotly_chart(fig_heat, use_container_width=True)
+    st.plotly_chart(style_fig(fig_heat, height=400), width="stretch")
 else:
     st.info("Нет данных за последние 30 дней")
 
@@ -389,9 +493,9 @@ if not df_30.empty:
     fig_weekday = px.area(weekday_totals, x="День", y="count",
                            labels={"count": "Входов"},
                            markers=True, line_shape="spline",
-                           color_discrete_sequence=["#1f77b4"])
-    fig_weekday.update_traces(fillcolor="rgba(31,119,180,0.15)")
-    st.plotly_chart(fig_weekday, use_container_width=True)
+                           color_discrete_sequence=[COLOR_NEW])
+    fig_weekday.update_traces(fillcolor=hex_to_rgba(COLOR_NEW, 0.15), line=dict(width=2), marker=dict(size=7))
+    st.plotly_chart(style_fig(fig_weekday), width="stretch")
 else:
     st.info("Нет данных за последние 30 дней")
 
@@ -405,24 +509,28 @@ if not df_period.empty:
     table["Время"] = table["timestamp"].dt.strftime("%H:%M:%S")
     table["Тип"] = table["is_repeat"].map({False: "Новый", True: "Повторный"})
 
-    dir_colors = {"IN": "#2ca02c", "OUT": "#d62728"}
+    dir_colors = {"IN": COLOR_IN, "OUT": COLOR_OUT}
     dir_labels = {"IN": "Вошёл", "OUT": "Вышел"}
-    type_colors = {"Новый": "#1f77b4", "Повторный": "#ff7f0e"}
+    type_colors = {"Новый": COLOR_NEW, "Повторный": COLOR_REPEAT}
 
-    rows_html = []
-    for _, row in table.head(15).iterrows():
+    # Single-line HTML per row (see note above the incidents block) — an
+    # indented multi-line f-string here gets swallowed as a code block.
+    rows_html = [f'<div style="background:{SURFACE};border:1px solid {BORDER};border-radius:10px;overflow:hidden">']
+    for i, (_, row) in enumerate(table.head(15).iterrows()):
         d_color = dir_colors[row["direction"]]
         t_color = type_colors[row["Тип"]]
-        rows_html.append(f"""
-        <div style="display:flex;align-items:center;justify-content:space-between;
-                    padding:10px 4px;border-bottom:1px solid rgba(128,128,128,0.15)">
-            <span style="opacity:0.7;font-size:14px">{row['Дата']} {row['Время']}</span>
-            <span style="background:{d_color}22;color:{d_color};padding:3px 10px;
-                        border-radius:12px;font-size:12px;font-weight:600">{dir_labels[row['direction']]}</span>
-            <span style="background:{t_color}22;color:{t_color};padding:3px 10px;
-                        border-radius:12px;font-size:12px;font-weight:600">{row['Тип']}</span>
-        </div>
-        """)
+        border = f"border-bottom:1px solid {GRIDLINE};" if i < 14 else ""
+        rows_html.append(
+            f'<div style="display:flex;align-items:center;justify-content:space-between;'
+            f'padding:10px 14px;{border}">'
+            f'<span style="color:{TEXT_SECONDARY};font-size:14px">{row["Дата"]} {row["Время"]}</span>'
+            f'<span style="background:{d_color}1a;color:{d_color};padding:3px 10px;'
+            f'border-radius:12px;font-size:12px;font-weight:600">{dir_labels[row["direction"]]}</span>'
+            f'<span style="background:{t_color}1a;color:{t_color};padding:3px 10px;'
+            f'border-radius:12px;font-size:12px;font-weight:600">{row["Тип"]}</span>'
+            f'</div>'
+        )
+    rows_html.append("</div>")
     st.markdown("".join(rows_html), unsafe_allow_html=True)
 
     csv_bytes = table[["Дата", "Время", "direction", "Тип", "visitor_id"]].to_csv(index=False).encode("utf-8")

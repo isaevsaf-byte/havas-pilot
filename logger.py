@@ -22,8 +22,9 @@ def setup_logging(level: int = logging.INFO) -> None:
     # Windows console defaults to the OEM codepage, not UTF-8 — without this,
     # Cyrillic log lines become mojibake once run_service.bat redirects
     # stderr into service.log (2>&1).
-    if hasattr(sys.stderr, "reconfigure"):
-        sys.stderr.reconfigure(encoding="utf-8")
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8")
 
     console = logging.StreamHandler()
     console.setFormatter(fmt)

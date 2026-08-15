@@ -58,6 +58,18 @@ def fetch_heartbeat():
         return None
 
 
+def fetch_incidents(limit=10):
+    result = (
+        client.table("incidents")
+        .select("*")
+        .eq("store", config.STORE_NAME)
+        .order("started_at", desc=True)
+        .limit(limit)
+        .execute()
+    )
+    return result.data or []
+
+
 def fetch_visits(since_local=None, until_local=None):
     """Fetch visits between two Tashkent-local datetimes.
 
@@ -141,6 +153,27 @@ with st.expander("⚠️ Что делать, чтобы сервис не па�
 3. **Не открывайте и не редактируйте файлы в папке `havas-pilot`** на ноутбуке без разработчиков — там боевая конфигурация.
 4. Если статус выше показывает 🔴 дольше часа — в Telegram уже должен был прийти автоматический алерт. Если алерта не было, а статус красный — напишите разработчикам.
 """)
+
+
+def format_duration(minutes):
+    if minutes is None:
+        return "ещё длится"
+    if minutes < 60:
+        return f"{minutes} мин"
+    hours, mins = divmod(minutes, 60)
+    return f"{hours} ч {mins} мин"
+
+
+incidents = fetch_incidents()
+if incidents:
+    with st.expander(f"📉 История простоев ({len(incidents)})"):
+        for inc in incidents:
+            started = pd.to_datetime(inc["started_at"], utc=True).tz_convert(TASHKENT_TZ)
+            duration = format_duration(inc.get("duration_min"))
+            if inc.get("ended_at") is None:
+                st.markdown(f"🔴 **с {started.strftime('%d.%m.%Y %H:%M')}** — {duration}")
+            else:
+                st.markdown(f"⚪ **{started.strftime('%d.%m.%Y %H:%M')}** — простой {duration}")
 
 st.divider()
 

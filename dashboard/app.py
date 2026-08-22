@@ -1,6 +1,7 @@
 import sys
 import os
 import time
+from collections import defaultdict
 from datetime import datetime, timezone, timedelta, date
 from zoneinfo import ZoneInfo
 
@@ -91,6 +92,27 @@ def metric_card(label: str, value: str, delta: str = None, delta_positive: bool 
         f'<div style="color:{TEXT_PRIMARY};font-size:1.9rem;font-weight:600;'
         f'font-variant-numeric:tabular-nums;overflow-wrap:break-word;line-height:1.2;margin-top:4px">{value}</div>'
         f'{delta_html}'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+
+
+def breakdown_card(label: str, rows: list[tuple[str, str]]):
+    """Same card shell as metric_card, but a short list of label/value rows
+    instead of one big number — for a card whose content isn't a single stat."""
+    if not rows:
+        rows = [("—", "")]
+    rows_html = "".join(
+        f'<div style="display:flex;justify-content:space-between;gap:8px;'
+        f'font-size:14px;color:{TEXT_PRIMARY};margin-top:6px">'
+        f'<span>{k}</span><span style="font-weight:600;font-variant-numeric:tabular-nums">{v}</span></div>'
+        for k, v in rows
+    )
+    st.markdown(
+        f'<div style="background:{SURFACE};border:1px solid {BORDER};border-radius:12px;'
+        f'padding:18px 20px;box-shadow:0 1px 2px rgba(11,11,11,0.04);height:100%">'
+        f'<div style="color:{TEXT_MUTED};font-size:13px;overflow-wrap:break-word">{label}</div>'
+        f'{rows_html}'
         f'</div>',
         unsafe_allow_html=True,
     )
@@ -269,9 +291,51 @@ def format_duration(minutes):
 
 
 TYPE_LABEL = {"camera": "📷 камера", "service": "🖥️ сервис/интернет"}
+REPORT_WINDOW_DAYS = 7
 
-incidents = fetch_incidents()
+
+def compute_incident_report(incidents, window_days=REPORT_WINDOW_DAYS):
+    """Uptime % and downtime-by-type over a fixed trailing window.
+
+    Incidents are clipped to the window — one that started before the
+    window but ended inside it only counts its overlap, not its full span.
+    """
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(days=window_days)
+    window_total_min = window_days * 24 * 60
+    by_type = defaultdict(lambda: {"count": 0, "minutes": 0.0})
+    for inc in incidents:
+        started = pd.to_datetime(inc["started_at"], utc=True).to_pydatetime()
+        ended = pd.to_datetime(inc["ended_at"], utc=True).to_pydatetime() if inc.get("ended_at") else now
+        if ended < cutoff:
+            continue
+        overlap_start = max(started, cutoff)
+        minutes = (ended - overlap_start).total_seconds() / 60
+        if minutes <= 0:
+            continue
+        t = inc.get("type") or "unknown"
+        by_type[t]["count"] += 1
+        by_type[t]["minutes"] += minutes
+    total_down = sum(v["minutes"] for v in by_type.values())
+    uptime_pct = 100 * (1 - total_down / window_total_min)
+    return uptime_pct, total_down, by_type
+
+
+incidents = fetch_incidents(limit=50)
 if incidents:
+    uptime_pct, total_down_min, by_type = compute_incident_report(incidents)
+    r1, r2, r3 = st.columns(3)
+    with r1:
+        metric_card(f"Uptime ({REPORT_WINDOW_DAYS} дней)", f"{uptime_pct:.1f}%")
+    with r2:
+        metric_card("Простой всего", format_duration(round(total_down_min)) if total_down_min else "0 мин")
+    with r3:
+        rows = [
+            (TYPE_LABEL.get(t, t), f'{format_duration(round(v["minutes"]))} ({v["count"]})')
+            for t, v in sorted(by_type.items(), key=lambda kv: -kv[1]["minutes"])
+        ]
+        breakdown_card(f"Простой по причине ({REPORT_WINDOW_DAYS} дней)", rows)
+
     with st.expander(f"📉 История простоев ({len(incidents)})"):
         # Built as single-line HTML (no embedded newlines/indentation) —
         # Streamlit's markdown parser otherwise treats an indented line

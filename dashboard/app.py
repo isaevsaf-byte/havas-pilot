@@ -348,14 +348,18 @@ if incidents:
             ongoing = inc.get("ended_at") is None
             accent = STATUS_CRITICAL if ongoing else TEXT_MUTED
             status_text = "идёт сейчас" if ongoing else f"простой {duration}"
+            # Grid, not flex+space-between: with only 3 items, space-between
+            # drifts the middle column left/right depending on how long its
+            # neighbors' text is, so rows don't line up. Fixed columns do.
             rows_html.append(
-                f'<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;'
+                f'<div style="display:grid;grid-template-columns:150px 1fr auto;align-items:center;gap:12px;'
                 f'padding:10px 14px;margin-bottom:6px;border-radius:8px;'
                 f'background:{SURFACE};border-left:3px solid {accent}">'
-                f'<span style="color:{TEXT_PRIMARY};font-weight:600;font-size:14px">{started.strftime("%d.%m.%Y %H:%M")}</span>'
+                f'<span style="color:{TEXT_PRIMARY};font-weight:600;font-size:14px;'
+                f'font-variant-numeric:tabular-nums">{started.strftime("%d.%m.%Y %H:%M")}</span>'
                 f'<span style="color:{TEXT_SECONDARY};font-size:13px">{status_text}</span>'
                 f'<span style="background:{TEXT_MUTED}1a;color:{TEXT_SECONDARY};padding:3px 10px;'
-                f'border-radius:12px;font-size:12px;font-weight:600;white-space:nowrap">{type_label}</span>'
+                f'border-radius:12px;font-size:12px;font-weight:600;white-space:nowrap;justify-self:end">{type_label}</span>'
                 f'</div>'
             )
         st.markdown("".join(rows_html), unsafe_allow_html=True)

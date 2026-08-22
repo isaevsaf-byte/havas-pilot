@@ -360,6 +360,54 @@ if incidents:
             )
         st.markdown("".join(rows_html), unsafe_allow_html=True)
 
+# --- Readiness criteria (temporary — remove this block once handed off) ---
+# Tracks progress toward a clean 7-day streak from REVIEW_START_DATE, agreed
+# with the client on 22.08.2026. Criteria 3-4 (false alerts, manual fixes)
+# aren't in Supabase — judged by eye, listed here only as a checklist.
+REVIEW_START_DATE = date(2026, 8, 22)
+IN_OUT_TARGET_RATIO = 2.0
+STREAK_TARGET_DAYS = 7
+
+with st.expander("🎯 Критерии готовности к сдаче (временно, уберём после)"):
+    review_start_dt = datetime.combine(REVIEW_START_DATE, datetime.min.time(), tzinfo=TASHKENT_TZ)
+    days_elapsed = max(0, (datetime.now(TASHKENT_TZ).date() - REVIEW_START_DATE).days)
+    st.markdown(f"Отсчёт с **{REVIEW_START_DATE.strftime('%d.%m.%Y')}** — день **{days_elapsed}** из {STREAK_TARGET_DAYS}.")
+
+    # Criterion 1: consecutive days since the last software (`service`) incident.
+    service_incidents = [i for i in incidents if i.get("type") == "service"]
+    last_service_end = None
+    for i in service_incidents:
+        end = pd.to_datetime(i["ended_at"], utc=True) if i.get("ended_at") else datetime.now(timezone.utc)
+        if end >= pd.Timestamp(review_start_dt):
+            if last_service_end is None or end > last_service_end:
+                last_service_end = end
+    streak_since = last_service_end if last_service_end is not None else pd.Timestamp(review_start_dt)
+    streak_days = max(0, (datetime.now(timezone.utc) - streak_since.to_pydatetime()).days)
+    c1_ok = streak_days >= STREAK_TARGET_DAYS
+    c1_text = f"{'✅' if c1_ok else '⏳'} 1. Без software-простоя: {streak_days} из {STREAK_TARGET_DAYS} дней подряд"
+
+    # Criterion 2: daily IN:OUT ratio since REVIEW_START_DATE, every day ≤ target.
+    df_since_review = fetch_visits(review_start_dt, datetime.now(TASHKENT_TZ))
+    if df_since_review.empty:
+        c2_ok, c2_text = False, "⏳ 2. IN:OUT ≤ 2:1 каждый день: пока нет данных"
+    else:
+        df_r = df_since_review.copy()
+        df_r["date"] = df_r["timestamp"].dt.date
+        daily_counts = df_r.groupby(["date", "direction"]).size().unstack(fill_value=0)
+        worst_ratio = 0.0
+        for d, row in daily_counts.iterrows():
+            out_n = row.get("OUT", 0)
+            in_n = row.get("IN", 0)
+            if out_n > 0:
+                worst_ratio = max(worst_ratio, in_n / out_n)
+        c2_ok = worst_ratio > 0 and worst_ratio <= IN_OUT_TARGET_RATIO
+        c2_text = f"{'✅' if c2_ok else '⏳'} 2. IN:OUT ≤ {IN_OUT_TARGET_RATIO:.0f}:1 каждый день: худший день {worst_ratio:.2f}:1"
+
+    st.markdown(c1_text)
+    st.markdown(c2_text)
+    st.markdown("⬜ 3. Ноль ложных Telegram-алертов за неделю — *проверяется вручную*")
+    st.markdown("⬜ 4. Ни одного ручного вмешательства за неделю — *проверяется вручную*")
+
 st.divider()
 
 # --- Period selector (drives everything below except the 30-day heatmap/trend) ---

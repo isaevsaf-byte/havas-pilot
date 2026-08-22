@@ -170,8 +170,12 @@ class CloudDB:
             logger.warning("No SUPABASE_URL — running in offline mode")
             self.client = None
         else:
-            from supabase import create_client
-            self.client = create_client(config.SUPABASE_URL, config.SUPABASE_KEY)
+            from supabase import create_client, ClientOptions
+            self.client = create_client(
+                config.SUPABASE_URL,
+                config.SUPABASE_KEY,
+                options=ClientOptions(postgrest_client_timeout=config.SUPABASE_REQUEST_TIMEOUT_SEC),
+            )
 
     def log_visit(self, timestamp: str, direction: str, is_repeat: bool, visitor_id: str) -> None:
         payload = {

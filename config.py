@@ -27,6 +27,12 @@ EMBED_CROP_H = 256               # height to resize crop before embedding extrac
 # === DB ===
 SUPABASE_URL = os.getenv("SUPABASE_URL", "")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
+# supabase-py defaults to a 120s request timeout — observed in production
+# (20-21.08.2026) to not fire reliably on a "silently dead" connection
+# (VPN tunnel gone dark without tearing down the socket), blocking the
+# single-threaded cloud_sender for hours with zero logged errors. A short
+# timeout fails fast into the existing retry/requeue path instead.
+SUPABASE_REQUEST_TIMEOUT_SEC = 15
 
 # === UI ===
 HEADLESS = os.getenv("HEADLESS", "") == "1"
